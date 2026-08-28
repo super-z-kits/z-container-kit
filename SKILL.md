@@ -33,6 +33,14 @@ Kit copies live at `/home/z/my-project/z-container-kit/` (git-tracked),
 portable `/home/user_skills/z-container.zip`. If helpers are missing (fresh
 chat), reinstall from any copy: `bash <kit>/scripts/install.sh`.
 
+## Rules you never break
+
+1. **Push your work often — GIT IS THE DISK.** There is no durable local disk; github is the only cross-chat persistence. Pushed = saved; unpushed = at risk.
+2. **Never force push to remote.** Local state can be faulty (watchdog reverts, workspace wipes, wrong work dir). `git push --force` overwrites the only copy with your possibly-broken local — the most deadly combination. Slow down and fix merge conflicts properly, or stop and ask the user for explicit permission. The most common cause of divergence that tempts force-push is your own local workspace issue, not a real remote conflict.
+3. **Set git identity to your real GitHub account.** `git config user.name "<GitHub username>"` and `git config user.email "<id>+<username>@users.noreply.github.com"` — the exact noreply email from GitHub settings, never an invented ID. Vercel blocks deploys authored by `Z User <z@container>` or any email not on your GitHub account.
+4. **Delegate to sub-agents to avoid excessive bash calls.** Rapid toolcall loops risk the 403 lockout (see law 6). Spawn sub-agents for repetitive probes.
+5. **The watchdog force-checkouts `/home/z/my-project` to main every ~20s**, reverting any file that differs between branches. Solution: work in a clone outside the watched path (e.g. `/tmp/my-project/worktrees/<name>`), or stay on main and use a separate fork repo if you truly need branch isolation.
+
 ## The ten laws
 
 1. **Session starts with `bash /home/z/my-project/scripts/zsession`** — read its report before touching anything.
