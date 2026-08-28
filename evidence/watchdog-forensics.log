@@ -1,0 +1,351 @@
+2026-08-28 03:54:37.671 === watcher start pid=1371 ===
+2026-08-28 03:54:37.674 inotify watch armed on /home/z/my-project/.git
+2026-08-28 03:54:37.675 init head='ref: refs/heads/main' ino=134861 mtime=1787888961287613243 owner=1001:1001 mode=100664
+2026-08-28 03:54:37.675 SPAWN pid=1 cmd='/usr/bin/tini -- /start.sh'
+2026-08-28 03:54:37.675 SPAWN pid=2 cmd='caddy run --config /app/Caddyfile --adapter caddyfile'
+2026-08-28 03:54:37.675 SPAWN pid=909 cmd='uv run main.py'
+2026-08-28 03:54:37.675 SPAWN pid=925 cmd='/app/.venv/bin/python3 main.py'
+2026-08-28 03:54:37.675 SPAWN pid=1364 cmd="/bin/sh -c su z -c '/bin/bash --noprofile --norc'"
+2026-08-28 03:54:37.675 SPAWN pid=1365 cmd='su z -c /bin/bash --noprofile --norc'
+2026-08-28 03:54:37.675 SPAWN pid=1367 cmd='/bin/bash --noprofile --norc'
+2026-08-28 03:54:37.675 SPAWN pid=1371 cmd='python3 /home/z/my-project/scripts/wdt_watch.py'
+2026-08-28 03:54:37.675 SPAWN pid=1372 cmd='sleep 2'
+2026-08-28 03:54:37.675 init chain_active=True
+2026-08-28 03:54:39.735 EXIT pid=1364 lifetime=2.06s
+2026-08-28 03:54:39.735 EXIT pid=1365 lifetime=2.06s
+2026-08-28 03:54:39.735 EXIT pid=1367 lifetime=2.06s
+2026-08-28 03:54:39.735 EXIT pid=1372 lifetime=2.06s
+2026-08-28 03:54:39.735 CHAIN IDLE head='ref: refs/heads/main'
+2026-08-28 03:54:45.766 SPAWN pid=1378 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:54:45.766 SPAWN pid=1379 cmd='su z -c /bin/bash'
+2026-08-28 03:54:45.766 SPAWN pid=1381 cmd='/bin/bash'
+2026-08-28 03:54:45.766 CHAIN ACTIVE head='ref: refs/heads/main'
+2026-08-28 03:54:45.891 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='ref: refs/heads/main' ino=134861 mtime=1787888961287613243 owner=1001:1001 mode=100664
+2026-08-28 03:54:45.891 HEADCHANGE 'ref: refs/heads/main' -> 'ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889285890494460 owner=1001:1001 mode=100664
+2026-08-28 03:54:45.891 INOTIFY name=HEAD.lock events=['MODIFY'] cookie=0 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889285890494460 owner=1001:1001 mode=100664
+2026-08-28 03:54:45.891 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889285890494460 owner=1001:1001 mode=100664
+2026-08-28 03:54:45.891 INOTIFY name=HEAD.lock events=['MOVED_FROM'] cookie=3613 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889285890494460 owner=1001:1001 mode=100664
+2026-08-28 03:54:45.891 INOTIFY name=HEAD events=['MOVED_TO'] cookie=3613 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889285890494460 owner=1001:1001 mode=100664
+2026-08-28 03:54:46.042 EXIT pid=1378 lifetime=0.28s
+2026-08-28 03:54:46.042 EXIT pid=1379 lifetime=0.28s
+2026-08-28 03:54:46.042 EXIT pid=1381 lifetime=0.28s
+2026-08-28 03:54:46.042 CHAIN IDLE head='ref: refs/heads/tmp/wdt-baseline'
+2026-08-28 03:54:47.753 HEARTBEAT head='ref: refs/heads/tmp/wdt-baseline' chain_active=False uptime=10s
+2026-08-28 03:54:49.819 SPAWN pid=1390 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:54:49.819 SPAWN pid=1391 cmd='su z -c /bin/bash'
+2026-08-28 03:54:49.819 SPAWN pid=1393 cmd='/bin/bash'
+2026-08-28 03:54:49.819 CHAIN ACTIVE head='ref: refs/heads/tmp/wdt-baseline'
+2026-08-28 03:54:49.858 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889285890494460 owner=1001:1001 mode=100664
+2026-08-28 03:54:49.858 INOTIFY name=HEAD.lock events=['MODIFY'] cookie=0 head='ref: refs/heads/main' ino=134871 mtime=1787889289857488563 owner=1001:1001 mode=100664
+2026-08-28 03:54:49.858 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='ref: refs/heads/main' ino=134871 mtime=1787889289857488563 owner=1001:1001 mode=100664
+2026-08-28 03:54:49.858 INOTIFY name=HEAD.lock events=['MOVED_FROM'] cookie=3617 head='ref: refs/heads/main' ino=134871 mtime=1787889289857488563 owner=1001:1001 mode=100664
+2026-08-28 03:54:49.858 INOTIFY name=HEAD events=['MOVED_TO'] cookie=3617 head='ref: refs/heads/main' ino=134871 mtime=1787889289857488563 owner=1001:1001 mode=100664
+2026-08-28 03:54:49.858 HEADCHANGE 'ref: refs/heads/tmp/wdt-baseline' -> 'ref: refs/heads/main' ino=134871 mtime=1787889289857488563 owner=1001:1001 mode=100664
+2026-08-28 03:54:50.068 SPAWN pid=1400 cmd="/bin/sh -c su z -c '/bin/bash --noprofile --norc'"
+2026-08-28 03:54:50.068 SPAWN pid=1401 cmd='su z -c /bin/bash --noprofile --norc'
+2026-08-28 03:54:50.068 SPAWN pid=1403 cmd='/bin/bash --noprofile --norc'
+2026-08-28 03:54:50.068 SPAWN pid=1406 cmd='git checkout --detach'
+2026-08-28 03:54:50.068 EXIT pid=1390 lifetime=0.25s
+2026-08-28 03:54:50.068 EXIT pid=1391 lifetime=0.25s
+2026-08-28 03:54:50.068 EXIT pid=1393 lifetime=0.25s
+2026-08-28 03:54:50.068 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='9e0ed238ad220b47170ffcec29ab9e598774ea1c' ino=134932 mtime=1787889290067486643 owner=1001:1001 mode=100664
+2026-08-28 03:54:50.068 INOTIFY name=HEAD.lock events=['MODIFY'] cookie=0 head='9e0ed238ad220b47170ffcec29ab9e598774ea1c' ino=134932 mtime=1787889290067486643 owner=1001:1001 mode=100664
+2026-08-28 03:54:50.069 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='9e0ed238ad220b47170ffcec29ab9e598774ea1c' ino=134932 mtime=1787889290067486643 owner=1001:1001 mode=100664
+2026-08-28 03:54:50.069 INOTIFY name=HEAD.lock events=['MOVED_FROM'] cookie=3621 head='9e0ed238ad220b47170ffcec29ab9e598774ea1c' ino=134932 mtime=1787889290067486643 owner=1001:1001 mode=100664
+2026-08-28 03:54:50.069 INOTIFY name=HEAD events=['MOVED_TO'] cookie=3621 head='9e0ed238ad220b47170ffcec29ab9e598774ea1c' ino=134932 mtime=1787889290067486643 owner=1001:1001 mode=100664
+2026-08-28 03:54:50.069 HEADCHANGE 'ref: refs/heads/main' -> '9e0ed238ad220b47170ffcec29ab9e598774ea1c' ino=134932 mtime=1787889290067486643 owner=1001:1001 mode=100664
+2026-08-28 03:54:50.370 EXIT pid=1400 lifetime=0.30s
+2026-08-28 03:54:50.370 EXIT pid=1401 lifetime=0.30s
+2026-08-28 03:54:50.370 EXIT pid=1403 lifetime=0.30s
+2026-08-28 03:54:50.370 EXIT pid=1406 lifetime=0.30s
+2026-08-28 03:54:50.370 CHAIN IDLE head='9e0ed238ad220b47170ffcec29ab9e598774ea1c'
+2026-08-28 03:54:55.151 SPAWN pid=1409 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:54:55.151 SPAWN pid=1410 cmd='su z -c /bin/bash'
+2026-08-28 03:54:55.151 SPAWN pid=1412 cmd='/bin/bash'
+2026-08-28 03:54:55.151 CHAIN ACTIVE head='9e0ed238ad220b47170ffcec29ab9e598774ea1c'
+2026-08-28 03:54:55.200 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='9e0ed238ad220b47170ffcec29ab9e598774ea1c' ino=134934 mtime=1787889295199470729 owner=1001:1001 mode=100664
+2026-08-28 03:54:55.200 INOTIFY name=HEAD.lock events=['MODIFY'] cookie=0 head='ref: refs/heads/main' ino=134934 mtime=1787889295199470729 owner=1001:1001 mode=100664
+2026-08-28 03:54:55.200 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='ref: refs/heads/main' ino=134934 mtime=1787889295199470729 owner=1001:1001 mode=100664
+2026-08-28 03:54:55.200 HEADCHANGE '9e0ed238ad220b47170ffcec29ab9e598774ea1c' -> 'ref: refs/heads/main' ino=134934 mtime=1787889295199470729 owner=1001:1001 mode=100664
+2026-08-28 03:54:55.200 INOTIFY name=HEAD.lock events=['MOVED_FROM'] cookie=3625 head='ref: refs/heads/main' ino=134934 mtime=1787889295199470729 owner=1001:1001 mode=100664
+2026-08-28 03:54:55.200 INOTIFY name=HEAD events=['MOVED_TO'] cookie=3625 head='ref: refs/heads/main' ino=134934 mtime=1787889295199470729 owner=1001:1001 mode=100664
+2026-08-28 03:54:55.451 EXIT pid=1409 lifetime=0.30s
+2026-08-28 03:54:55.451 EXIT pid=1410 lifetime=0.30s
+2026-08-28 03:54:55.451 EXIT pid=1412 lifetime=0.30s
+2026-08-28 03:54:55.451 CHAIN IDLE head='ref: refs/heads/main'
+2026-08-28 03:54:57.762 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=20s
+2026-08-28 03:55:07.773 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=30s
+2026-08-28 03:55:17.776 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=40s
+2026-08-28 03:55:27.780 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=50s
+2026-08-28 03:55:37.785 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=60s
+2026-08-28 03:55:47.790 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=70s
+2026-08-28 03:55:57.798 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=80s
+2026-08-28 03:56:07.799 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=90s
+2026-08-28 03:56:17.844 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=100s
+2026-08-28 03:56:23.918 SPAWN pid=1427 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:56:23.918 SPAWN pid=1428 cmd='su z -c /bin/bash'
+2026-08-28 03:56:23.918 SPAWN pid=1430 cmd='/bin/bash'
+2026-08-28 03:56:23.918 CHAIN ACTIVE head='ref: refs/heads/main'
+2026-08-28 03:56:24.170 EXIT pid=1427 lifetime=0.25s
+2026-08-28 03:56:24.170 EXIT pid=1428 lifetime=0.25s
+2026-08-28 03:56:24.170 EXIT pid=1430 lifetime=0.25s
+2026-08-28 03:56:24.170 CHAIN IDLE head='ref: refs/heads/main'
+2026-08-28 03:56:27.886 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=110s
+2026-08-28 03:56:32.738 SPAWN pid=1435 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:56:32.738 SPAWN pid=1436 cmd='su z -c /bin/bash'
+2026-08-28 03:56:32.738 SPAWN pid=1438 cmd='/bin/bash'
+2026-08-28 03:56:32.738 CHAIN ACTIVE head='ref: refs/heads/main'
+2026-08-28 03:56:32.990 EXIT pid=1435 lifetime=0.25s
+2026-08-28 03:56:32.990 EXIT pid=1436 lifetime=0.25s
+2026-08-28 03:56:32.990 EXIT pid=1438 lifetime=0.25s
+2026-08-28 03:56:32.990 CHAIN IDLE head='ref: refs/heads/main'
+2026-08-28 03:56:37.914 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=120s
+2026-08-28 03:56:47.914 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=130s
+2026-08-28 03:56:57.967 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=140s
+2026-08-28 03:57:07.981 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=150s
+2026-08-28 03:57:15.716 SPAWN pid=1448 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:57:15.716 SPAWN pid=1449 cmd='su z -c /bin/bash'
+2026-08-28 03:57:15.716 CHAIN ACTIVE head='ref: refs/heads/main'
+2026-08-28 03:57:15.930 SPAWN pid=1453 cmd="/bin/sh -c su z -c '/bin/bash --noprofile --norc'"
+2026-08-28 03:57:15.930 SPAWN pid=1454 cmd='su z -c /bin/bash --noprofile --norc'
+2026-08-28 03:57:15.930 SPAWN pid=1456 cmd='/bin/bash --noprofile --norc'
+2026-08-28 03:57:15.930 SPAWN pid=1457 cmd='git checkout tmp/wdt-baseline'
+2026-08-28 03:57:15.930 EXIT pid=1448 lifetime=0.21s
+2026-08-28 03:57:15.930 EXIT pid=1449 lifetime=0.21s
+2026-08-28 03:57:15.930 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889435929227596 owner=1001:1001 mode=100664
+2026-08-28 03:57:15.930 INOTIFY name=HEAD.lock events=['MODIFY'] cookie=0 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889435929227596 owner=1001:1001 mode=100664
+2026-08-28 03:57:15.930 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889435929227596 owner=1001:1001 mode=100664
+2026-08-28 03:57:15.930 INOTIFY name=HEAD.lock events=['MOVED_FROM'] cookie=3629 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889435929227596 owner=1001:1001 mode=100664
+2026-08-28 03:57:15.930 INOTIFY name=HEAD events=['MOVED_TO'] cookie=3629 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889435929227596 owner=1001:1001 mode=100664
+2026-08-28 03:57:15.930 HEADCHANGE 'ref: refs/heads/main' -> 'ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889435929227596 owner=1001:1001 mode=100664
+MARK-X 03:57:15.931 head=ref: refs/heads/tmp/wdt-baseline inode=134867
+2026-08-28 03:57:16.232 EXIT pid=1453 lifetime=0.30s
+2026-08-28 03:57:16.232 EXIT pid=1454 lifetime=0.30s
+2026-08-28 03:57:16.232 EXIT pid=1456 lifetime=0.30s
+2026-08-28 03:57:16.232 EXIT pid=1457 lifetime=0.30s
+2026-08-28 03:57:16.232 CHAIN IDLE head='ref: refs/heads/tmp/wdt-baseline'
+2026-08-28 03:57:17.990 HEARTBEAT head='ref: refs/heads/tmp/wdt-baseline' chain_active=False uptime=160s
+2026-08-28 03:57:19.752 SPAWN pid=1462 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:57:19.752 SPAWN pid=1463 cmd='su z -c /bin/bash'
+2026-08-28 03:57:19.752 SPAWN pid=1465 cmd='/bin/bash'
+2026-08-28 03:57:19.752 CHAIN ACTIVE head='ref: refs/heads/tmp/wdt-baseline'
+2026-08-28 03:57:19.956 SPAWN pid=1467 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:57:19.956 SPAWN pid=1468 cmd='su z -c /bin/bash'
+2026-08-28 03:57:19.956 SPAWN pid=1470 cmd='/bin/bash'
+2026-08-28 03:57:19.956 SPAWN pid=1471 cmd='git switch main'
+2026-08-28 03:57:19.956 EXIT pid=1462 lifetime=0.20s
+2026-08-28 03:57:19.956 EXIT pid=1463 lifetime=0.20s
+2026-08-28 03:57:19.956 EXIT pid=1465 lifetime=0.20s
+2026-08-28 03:57:19.956 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='ref: refs/heads/tmp/wdt-baseline' ino=134867 mtime=1787889435929227596 owner=1001:1001 mode=100664
+2026-08-28 03:57:19.956 INOTIFY name=HEAD.lock events=['MODIFY'] cookie=0 head='ref: refs/heads/main' ino=134861 mtime=1787889439955223900 owner=1001:1001 mode=100664
+2026-08-28 03:57:19.956 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='ref: refs/heads/main' ino=134861 mtime=1787889439955223900 owner=1001:1001 mode=100664
+2026-08-28 03:57:19.956 HEADCHANGE 'ref: refs/heads/tmp/wdt-baseline' -> 'ref: refs/heads/main' ino=134861 mtime=1787889439955223900 owner=1001:1001 mode=100664
+2026-08-28 03:57:19.956 INOTIFY name=HEAD.lock events=['MOVED_FROM'] cookie=3633 head='ref: refs/heads/main' ino=134861 mtime=1787889439955223900 owner=1001:1001 mode=100664
+2026-08-28 03:57:19.956 INOTIFY name=HEAD events=['MOVED_TO'] cookie=3633 head='ref: refs/heads/main' ino=134861 mtime=1787889439955223900 owner=1001:1001 mode=100664
+2026-08-28 03:57:20.257 EXIT pid=1467 lifetime=0.30s
+2026-08-28 03:57:20.257 EXIT pid=1468 lifetime=0.30s
+2026-08-28 03:57:20.257 EXIT pid=1470 lifetime=0.30s
+2026-08-28 03:57:20.257 EXIT pid=1471 lifetime=0.30s
+2026-08-28 03:57:20.257 CHAIN IDLE head='ref: refs/heads/main'
+2026-08-28 03:57:25.282 SPAWN pid=1475 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:57:25.282 SPAWN pid=1476 cmd='su z -c /bin/bash'
+2026-08-28 03:57:25.282 SPAWN pid=1478 cmd='/bin/bash'
+2026-08-28 03:57:25.282 CHAIN ACTIVE head='ref: refs/heads/main'
+MARK-Z 03:57:25.379
+2026-08-28 03:57:25.533 EXIT pid=1476 lifetime=0.25s
+2026-08-28 03:57:25.533 EXIT pid=1475 lifetime=0.25s
+2026-08-28 03:57:25.533 EXIT pid=1478 lifetime=0.25s
+2026-08-28 03:57:25.533 CHAIN IDLE head='ref: refs/heads/main'
+2026-08-28 03:57:27.996 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=170s
+2026-08-28 03:57:38.044 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=180s
+2026-08-28 03:57:48.090 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=190s
+2026-08-28 03:57:58.138 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=200s
+2026-08-28 03:58:08.141 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=210s
+2026-08-28 03:58:18.190 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=220s
+2026-08-28 03:58:28.190 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=230s
+2026-08-28 03:58:38.192 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=240s
+2026-08-28 03:58:48.203 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=250s
+2026-08-28 03:58:57.730 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='ref: refs/heads/main' ino=134932 mtime=1787889537728139459 owner=1001:1001 mode=100664
+2026-08-28 03:58:57.730 INOTIFY name=HEAD.lock events=['MODIFY'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134932 mtime=1787889537728139459 owner=1001:1001 mode=100664
+2026-08-28 03:58:57.730 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134932 mtime=1787889537728139459 owner=1001:1001 mode=100664
+2026-08-28 03:58:57.730 HEADCHANGE 'ref: refs/heads/main' -> 'ref: refs/heads/tmp/wdt-file' ino=134932 mtime=1787889537728139459 owner=1001:1001 mode=100664
+2026-08-28 03:58:57.730 SPAWN pid=1492 cmd="/bin/sh -c su z -c '/bin/bash --noprofile --norc'"
+2026-08-28 03:58:57.730 SPAWN pid=1493 cmd='su z -c /bin/bash --noprofile --norc'
+2026-08-28 03:58:57.730 SPAWN pid=1495 cmd='/bin/bash --noprofile --norc'
+2026-08-28 03:58:57.730 CHAIN ACTIVE head='ref: refs/heads/tmp/wdt-file'
+2026-08-28 03:58:57.730 INOTIFY name=HEAD.lock events=['MOVED_FROM'] cookie=3637 head='ref: refs/heads/tmp/wdt-file' ino=134932 mtime=1787889537728139459 owner=1001:1001 mode=100664
+2026-08-28 03:58:57.730 INOTIFY name=HEAD events=['MOVED_TO'] cookie=3637 head='ref: refs/heads/tmp/wdt-file' ino=134932 mtime=1787889537728139459 owner=1001:1001 mode=100664
+2026-08-28 03:58:57.733 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134932 mtime=1787889537728139459 owner=1001:1001 mode=100664
+2026-08-28 03:58:57.733 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134932 mtime=1787889537728139459 owner=1001:1001 mode=100664
+2026-08-28 03:58:57.733 INOTIFY name=HEAD.lock events=['DELETE'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134932 mtime=1787889537728139459 owner=1001:1001 mode=100664
+2026-08-28 03:58:58.035 EXIT pid=1492 lifetime=0.31s
+2026-08-28 03:58:58.035 EXIT pid=1493 lifetime=0.31s
+2026-08-28 03:58:58.035 EXIT pid=1495 lifetime=0.31s
+2026-08-28 03:58:58.035 EXIT pid=1496 lifetime=0.31s
+2026-08-28 03:58:58.035 CHAIN IDLE head='ref: refs/heads/tmp/wdt-file'
+2026-08-28 03:58:58.236 HEARTBEAT head='ref: refs/heads/tmp/wdt-file' chain_active=False uptime=261s
+2026-08-28 03:59:05.829 SPAWN pid=1510 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:59:05.829 SPAWN pid=1511 cmd='su z -c /bin/bash'
+2026-08-28 03:59:05.829 SPAWN pid=1513 cmd='/bin/bash'
+2026-08-28 03:59:05.829 SPAWN pid=1514 cmd='git switch main'
+2026-08-28 03:59:05.829 CHAIN ACTIVE head='ref: refs/heads/tmp/wdt-file'
+2026-08-28 03:59:05.829 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134932 mtime=1787889537728139459 owner=1001:1001 mode=100664
+2026-08-28 03:59:05.829 INOTIFY name=HEAD.lock events=['MODIFY'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134861 mtime=1787889545828138051 owner=1001:1001 mode=100664
+2026-08-28 03:59:05.829 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='ref: refs/heads/main' ino=134861 mtime=1787889545828138051 owner=1001:1001 mode=100664
+2026-08-28 03:59:05.829 HEADCHANGE 'ref: refs/heads/tmp/wdt-file' -> 'ref: refs/heads/main' ino=134861 mtime=1787889545828138051 owner=1001:1001 mode=100664
+2026-08-28 03:59:05.829 INOTIFY name=HEAD.lock events=['MOVED_FROM'] cookie=3647 head='ref: refs/heads/main' ino=134861 mtime=1787889545828138051 owner=1001:1001 mode=100664
+2026-08-28 03:59:05.829 INOTIFY name=HEAD events=['MOVED_TO'] cookie=3647 head='ref: refs/heads/main' ino=134861 mtime=1787889545828138051 owner=1001:1001 mode=100664
+2026-08-28 03:59:06.065 SPAWN pid=1515 cmd="/bin/sh -c su z -c '/bin/bash --noprofile --norc'"
+2026-08-28 03:59:06.065 SPAWN pid=1516 cmd='su z -c /bin/bash --noprofile --norc'
+2026-08-28 03:59:06.065 SPAWN pid=1518 cmd='/bin/bash --noprofile --norc'
+2026-08-28 03:59:06.065 SPAWN pid=1523 cmd='/bin/bash --noprofile --norc'
+2026-08-28 03:59:06.065 EXIT pid=1510 lifetime=0.24s
+2026-08-28 03:59:06.065 EXIT pid=1511 lifetime=0.24s
+2026-08-28 03:59:06.065 EXIT pid=1513 lifetime=0.24s
+2026-08-28 03:59:06.065 EXIT pid=1514 lifetime=0.24s
+2026-08-28 03:59:06.366 EXIT pid=1515 lifetime=0.30s
+2026-08-28 03:59:06.366 EXIT pid=1516 lifetime=0.30s
+2026-08-28 03:59:06.366 EXIT pid=1518 lifetime=0.30s
+2026-08-28 03:59:06.366 EXIT pid=1523 lifetime=0.30s
+2026-08-28 03:59:06.366 EXIT pid=1524 lifetime=0.30s
+2026-08-28 03:59:06.366 EXIT pid=1525 lifetime=0.30s
+2026-08-28 03:59:06.366 CHAIN IDLE head='ref: refs/heads/main'
+2026-08-28 03:59:08.275 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=271s
+2026-08-28 03:59:18.278 HEARTBEAT head='ref: refs/heads/main' chain_active=False uptime=281s
+2026-08-28 03:59:23.223 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='ref: refs/heads/main' ino=134861 mtime=1787889545828138051 owner=1001:1001 mode=100664
+2026-08-28 03:59:23.223 INOTIFY name=HEAD.lock events=['MODIFY'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134948 mtime=1787889563221141493 owner=1001:1001 mode=100664
+2026-08-28 03:59:23.223 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134948 mtime=1787889563221141493 owner=1001:1001 mode=100664
+2026-08-28 03:59:23.223 INOTIFY name=HEAD.lock events=['MOVED_FROM'] cookie=3651 head='ref: refs/heads/tmp/wdt-file' ino=134948 mtime=1787889563221141493 owner=1001:1001 mode=100664
+2026-08-28 03:59:23.223 INOTIFY name=HEAD events=['MOVED_TO'] cookie=3651 head='ref: refs/heads/tmp/wdt-file' ino=134948 mtime=1787889563221141493 owner=1001:1001 mode=100664
+2026-08-28 03:59:23.223 HEADCHANGE 'ref: refs/heads/main' -> 'ref: refs/heads/tmp/wdt-file' ino=134948 mtime=1787889563221141493 owner=1001:1001 mode=100664
+2026-08-28 03:59:27.285 SPAWN pid=1542 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:59:27.285 SPAWN pid=1543 cmd='su z -c /bin/bash'
+2026-08-28 03:59:27.285 SPAWN pid=1545 cmd='/bin/bash'
+2026-08-28 03:59:27.285 CHAIN ACTIVE head='ref: refs/heads/tmp/wdt-file'
+2026-08-28 03:59:27.561 SPAWN pid=1547 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 03:59:27.562 SPAWN pid=1548 cmd='su z -c /bin/bash'
+2026-08-28 03:59:27.562 SPAWN pid=1550 cmd='/bin/bash'
+2026-08-28 03:59:27.562 EXIT pid=1542 lifetime=0.28s
+2026-08-28 03:59:27.562 EXIT pid=1543 lifetime=0.28s
+2026-08-28 03:59:27.562 EXIT pid=1545 lifetime=0.28s
+2026-08-28 03:59:27.817 SPAWN pid=1557 cmd="/bin/sh -c su z -c '/bin/bash --noprofile --norc'"
+2026-08-28 03:59:27.817 SPAWN pid=1558 cmd='su z -c /bin/bash --noprofile --norc'
+2026-08-28 03:59:27.817 EXIT pid=1547 lifetime=0.26s
+2026-08-28 03:59:27.817 EXIT pid=1548 lifetime=0.26s
+2026-08-28 03:59:27.817 EXIT pid=1550 lifetime=0.26s
+2026-08-28 03:59:28.096 EXIT pid=1557 lifetime=0.28s
+2026-08-28 03:59:28.096 EXIT pid=1558 lifetime=0.28s
+2026-08-28 03:59:28.096 CHAIN IDLE head='ref: refs/heads/tmp/wdt-file'
+2026-08-28 03:59:28.297 HEARTBEAT head='ref: refs/heads/tmp/wdt-file' chain_active=False uptime=291s
+2026-08-28 03:59:38.300 HEARTBEAT head='ref: refs/heads/tmp/wdt-file' chain_active=False uptime=301s
+2026-08-28 03:59:48.305 HEARTBEAT head='ref: refs/heads/tmp/wdt-file' chain_active=False uptime=311s
+2026-08-28 03:59:58.307 HEARTBEAT head='ref: refs/heads/tmp/wdt-file' chain_active=False uptime=321s
+2026-08-28 04:00:08.318 HEARTBEAT head='ref: refs/heads/tmp/wdt-file' chain_active=False uptime=331s
+2026-08-28 04:00:14.851 SPAWN pid=1569 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 04:00:14.852 SPAWN pid=1570 cmd='su z -c /bin/bash'
+2026-08-28 04:00:14.852 SPAWN pid=1572 cmd='/bin/bash'
+2026-08-28 04:00:14.852 CHAIN ACTIVE head='ref: refs/heads/tmp/wdt-file'
+2026-08-28 04:00:15.133 SPAWN pid=1579 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 04:00:15.133 SPAWN pid=1580 cmd='su z -c /bin/bash'
+2026-08-28 04:00:15.133 EXIT pid=1569 lifetime=0.28s
+2026-08-28 04:00:15.133 EXIT pid=1570 lifetime=0.28s
+2026-08-28 04:00:15.133 EXIT pid=1572 lifetime=0.28s
+2026-08-28 04:00:15.348 SPAWN pid=1584 cmd="/bin/sh -c su z -c '/bin/bash --noprofile --norc'"
+2026-08-28 04:00:15.348 SPAWN pid=1585 cmd='su z -c /bin/bash --noprofile --norc'
+2026-08-28 04:00:15.348 SPAWN pid=1587 cmd='/bin/bash --noprofile --norc'
+2026-08-28 04:00:15.348 SPAWN pid=1588 cmd='git checkout -- hello-branch.txt'
+2026-08-28 04:00:15.348 EXIT pid=1579 lifetime=0.21s
+2026-08-28 04:00:15.348 EXIT pid=1580 lifetime=0.21s
+2026-08-28 04:00:15.350 INOTIFY name=HEAD.lock events=['CREATE'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134948 mtime=1787889563221141493 owner=1001:1001 mode=100664
+2026-08-28 04:00:15.350 INOTIFY name=HEAD.lock events=['MODIFY'] cookie=0 head='ref: refs/heads/tmp/wdt-file' ino=134946 mtime=1787889615349128229 owner=1001:1001 mode=100664
+2026-08-28 04:00:15.350 INOTIFY name=HEAD.lock events=['CLOSE_WRITE'] cookie=0 head='ref: refs/heads/main' ino=134946 mtime=1787889615349128229 owner=1001:1001 mode=100664
+2026-08-28 04:00:15.350 HEADCHANGE 'ref: refs/heads/tmp/wdt-file' -> 'ref: refs/heads/main' ino=134946 mtime=1787889615349128229 owner=1001:1001 mode=100664
+2026-08-28 04:00:15.350 INOTIFY name=HEAD.lock events=['MOVED_FROM'] cookie=3661 head='ref: refs/heads/main' ino=134946 mtime=1787889615349128229 owner=1001:1001 mode=100664
+2026-08-28 04:00:15.350 INOTIFY name=HEAD events=['MOVED_TO'] cookie=3661 head='ref: refs/heads/main' ino=134946 mtime=1787889615349128229 owner=1001:1001 mode=100664
+2026-08-28 04:00:15.677 SPAWN pid=1597 cmd='mv .git /tmp/my-project/gitdirs/myproj.git'
+2026-08-28 04:00:15.677 EXIT pid=1588 lifetime=0.33s
+2026-08-28 04:00:17.031 INOTIFY name=HEAD events=['DELETE'] cookie=0 head='<err2>' <nostat>
+2026-08-28 04:00:17.031 HEADCHANGE 'ref: refs/heads/main' -> '<err2>' <nostat>
+2026-08-28 04:00:17.082 HEADCHANGE '<err2>' -> '<err20>' <nostat>
+2026-08-28 04:00:17.233 SPAWN pid=1601 cmd='git checkout tmp/wdt-file'
+2026-08-28 04:00:17.233 SPAWN pid=1602 cmd='tail -1'
+2026-08-28 04:00:17.233 EXIT pid=1597 lifetime=1.56s
+2026-08-28 04:00:17.986 EXIT pid=1601 lifetime=0.75s
+2026-08-28 04:00:17.986 EXIT pid=1602 lifetime=0.75s
+2026-08-28 04:00:17.986 EXIT pid=1584 lifetime=2.64s
+2026-08-28 04:00:17.986 EXIT pid=1585 lifetime=2.64s
+2026-08-28 04:00:17.986 EXIT pid=1587 lifetime=2.64s
+2026-08-28 04:00:17.986 CHAIN IDLE head='<err20>'
+2026-08-28 04:00:18.337 HEARTBEAT head='<err20>' chain_active=False uptime=341s
+2026-08-28 04:00:24.510 SPAWN pid=1604 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 04:00:24.510 SPAWN pid=1605 cmd='su z -c /bin/bash'
+2026-08-28 04:00:24.510 SPAWN pid=1607 cmd='/bin/bash'
+2026-08-28 04:00:24.510 SPAWN pid=1608 cmd='git branch --show-current'
+2026-08-28 04:00:24.511 CHAIN ACTIVE head='<err20>'
+2026-08-28 04:00:24.761 SPAWN pid=1609 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 04:00:24.762 SPAWN pid=1610 cmd='su z -c /bin/bash'
+2026-08-28 04:00:24.762 SPAWN pid=1612 cmd='/bin/bash'
+2026-08-28 04:00:24.762 SPAWN pid=1613 cmd='git switch main'
+2026-08-28 04:00:24.762 EXIT pid=1604 lifetime=0.25s
+2026-08-28 04:00:24.762 EXIT pid=1605 lifetime=0.25s
+2026-08-28 04:00:24.762 EXIT pid=1607 lifetime=0.25s
+2026-08-28 04:00:24.762 EXIT pid=1608 lifetime=0.25s
+2026-08-28 04:00:25.263 EXIT pid=1613 lifetime=0.50s
+2026-08-28 04:00:25.514 EXIT pid=1609 lifetime=0.75s
+2026-08-28 04:00:25.514 EXIT pid=1610 lifetime=0.75s
+2026-08-28 04:00:25.514 EXIT pid=1612 lifetime=0.75s
+2026-08-28 04:00:25.515 CHAIN IDLE head='<err20>'
+2026-08-28 04:00:28.375 HEARTBEAT head='<err20>' chain_active=False uptime=351s
+2026-08-28 04:00:38.412 HEARTBEAT head='<err20>' chain_active=False uptime=361s
+2026-08-28 04:00:48.452 HEARTBEAT head='<err20>' chain_active=False uptime=371s
+2026-08-28 04:00:58.491 HEARTBEAT head='<err20>' chain_active=False uptime=381s
+2026-08-28 04:01:08.533 HEARTBEAT head='<err20>' chain_active=False uptime=391s
+2026-08-28 04:01:18.580 HEARTBEAT head='<err20>' chain_active=False uptime=401s
+2026-08-28 04:01:28.618 HEARTBEAT head='<err20>' chain_active=False uptime=411s
+2026-08-28 04:01:38.621 HEARTBEAT head='<err20>' chain_active=False uptime=421s
+2026-08-28 04:01:48.661 HEARTBEAT head='<err20>' chain_active=False uptime=431s
+2026-08-28 04:01:58.706 HEARTBEAT head='<err20>' chain_active=False uptime=441s
+2026-08-28 04:02:08.743 HEARTBEAT head='<err20>' chain_active=False uptime=451s
+2026-08-28 04:02:18.783 HEARTBEAT head='<err20>' chain_active=False uptime=461s
+2026-08-28 04:02:28.820 HEARTBEAT head='<err20>' chain_active=False uptime=471s
+2026-08-28 04:02:38.867 HEARTBEAT head='<err20>' chain_active=False uptime=481s
+2026-08-28 04:02:48.913 HEARTBEAT head='<err20>' chain_active=False uptime=491s
+2026-08-28 04:02:56.392 SPAWN pid=1624 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 04:02:56.392 SPAWN pid=1625 cmd='su z -c /bin/bash'
+2026-08-28 04:02:56.392 SPAWN pid=1626 cmd='/usr/sbin/unix_chkpwd z chkexpiry'
+2026-08-28 04:02:56.392 CHAIN ACTIVE head='<err20>'
+2026-08-28 04:02:56.643 SPAWN pid=1629 cmd="/bin/sh -c su z -c '/bin/bash --noprofile --norc'"
+2026-08-28 04:02:56.643 SPAWN pid=1630 cmd='su z -c /bin/bash --noprofile --norc'
+2026-08-28 04:02:56.643 SPAWN pid=1632 cmd='/bin/bash --noprofile --norc'
+2026-08-28 04:02:56.643 SPAWN pid=1633 cmd='git log --all --oneline'
+2026-08-28 04:02:56.643 SPAWN pid=1634 cmd='head -10'
+2026-08-28 04:02:56.643 EXIT pid=1624 lifetime=0.25s
+2026-08-28 04:02:56.643 EXIT pid=1625 lifetime=0.25s
+2026-08-28 04:02:56.643 EXIT pid=1626 lifetime=0.25s
+2026-08-28 04:02:57.145 EXIT pid=1632 lifetime=0.50s
+2026-08-28 04:02:57.145 EXIT pid=1633 lifetime=0.50s
+2026-08-28 04:02:57.145 EXIT pid=1629 lifetime=0.50s
+2026-08-28 04:02:57.145 EXIT pid=1634 lifetime=0.50s
+2026-08-28 04:02:57.145 EXIT pid=1630 lifetime=0.50s
+2026-08-28 04:02:57.145 CHAIN IDLE head='<err20>'
+2026-08-28 04:02:58.952 HEARTBEAT head='<err20>' chain_active=False uptime=501s
+2026-08-28 04:03:08.990 HEARTBEAT head='<err20>' chain_active=False uptime=511s
+2026-08-28 04:03:19.034 HEARTBEAT head='<err20>' chain_active=False uptime=521s
+2026-08-28 04:03:29.071 HEARTBEAT head='<err20>' chain_active=False uptime=531s
+2026-08-28 04:03:39.107 HEARTBEAT head='<err20>' chain_active=False uptime=541s
+2026-08-28 04:03:49.143 HEARTBEAT head='<err20>' chain_active=False uptime=551s
+2026-08-28 04:03:59.192 HEARTBEAT head='<err20>' chain_active=False uptime=561s
+2026-08-28 04:04:09.230 HEARTBEAT head='<err20>' chain_active=False uptime=572s
+2026-08-28 04:04:19.270 HEARTBEAT head='<err20>' chain_active=False uptime=582s
+2026-08-28 04:04:29.311 HEARTBEAT head='<err20>' chain_active=False uptime=592s
+2026-08-28 04:04:39.349 HEARTBEAT head='<err20>' chain_active=False uptime=602s
+2026-08-28 04:04:49.387 HEARTBEAT head='<err20>' chain_active=False uptime=612s
+2026-08-28 04:04:59.408 HEARTBEAT head='<err20>' chain_active=False uptime=622s
+2026-08-28 04:05:09.449 HEARTBEAT head='<err20>' chain_active=False uptime=632s
+2026-08-28 04:05:14.728 SPAWN pid=1642 cmd='/bin/sh -c su z -c /bin/bash'
+2026-08-28 04:05:14.728 SPAWN pid=1643 cmd='su z -c /bin/bash'
+2026-08-28 04:05:14.728 SPAWN pid=1645 cmd='/bin/bash'
+2026-08-28 04:05:14.728 SPAWN pid=1646 cmd='git branch --show-current'
+2026-08-28 04:05:14.728 CHAIN ACTIVE head='<err20>'
+2026-08-28 04:05:14.929 stop-file seen, exiting
+2026-08-28 04:05:14.929 === watcher end ===

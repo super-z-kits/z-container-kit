@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# zsession — Z-container situation report at session start (read-only).
+# (kit v2.3.0)
+# Makes no persistent changes: mount checks create+remove one unique
+# .zk-rw-$$ probe file; git commands only read (status may refresh the
+# index stat-cache, which is cosmetic).
+#
+# usage: zsession
+# env:  ZK_PROJ, ZK_SYNC — pointing them at scratch dirs gives a full
+#       scratch-project report (live-project checks are skipped cleanly).
+set -uo pipefail
+# token masker for anything echoed into transcripts (PAT-bearing URLs,
+# branch names, commit subjects, state-file values)
+mask() { sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g'; }
+
+PROJ="${ZK_PROJ:-/home/z/my-project}"
+SYNC="${ZK_SYNC:-/home/sync}"
+STATE="$SYNC/zk-state.env"
+LIVE=0; [ "$PROJ" = "/home/z/my-project" ] && LIVE=1
+line() { printf '\n---------------- %s ----------------\n' "$1"; }
+
+echo "Z-CONTAINER SESSION REPORT   $(date -u +%FT%TZ)"
+
+line "container"
+UP="$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)"
+echo "booted: $((UP / 60)) min ago (a container recycle resets this)"
+echo "hostname: $(hostname)"
+for m in "$SYNC" /tmp/my-project "$PROJ/upload"; do
+  P=".zk-rw-$$"
+  if [ -d "$m" ] && touch "$m/$P" 2>/dev/null; then
+    rm -f "$m/$P"; echo "$m: writable"
+  else
+    echo "$m: NOT WRITABLE or missing"
+  fi
+done
+
+# parse state WITHOUT sourcing it (never eval file contents)
+get() { sed -n "s/^$1='\(.*\)'$/\1/p" "$STATE" 2>/dev/null | head -1; }
+
+line "recycle detection"
+if [ -f "$STATE" ]; then
+  S_COMMIT="$(get last_commit)"; S_BRANCH="$(get branch)"
+  S_TS="$(get ts)"; S_PUSHED="$(get pushed)"
+  CUR="$(git -C "$PROJ" rev-parse HEAD 2>/dev/null || echo none)"
+  S_EPOCH="$(date -u -d "${S_TS:0:4}-${S_TS:4:2}-${S_TS:6:2} ${S_TS:9:2}:${S_TS:11:2}:${S_TS:13:2}" +%s 2>/dev/null || echo 0)"
+  BOOT_EPOCH=$(( $(date +%s) - UP ))
+  echo "last zsave: ${S_TS:-?}  branch=$(printf '%s' "${S_BRANCH:-?}" | mask)  pushed=${S_PUSHED:-?}"
+  if [ "${S_EPOCH:-0}" -gt 0 ] && [ "$S_EPOCH" -lt "$BOOT_EPOCH" ]; then
+    echo "verdict: container RECYCLED since the last zsave (state predates this boot)"
+    if [ "$S_COMMIT" = "$CUR" ]; then
+      echo "  HEAD matches last zsave -> boot restore brought you back to your last save. Good."
+    else
+      echo "  HEAD($CUR) differs from last zsave($S_COMMIT) — stale-tar restore? new commits?"
+      echo "  -> see 'Restore procedures' in SKILL.md before touching anything"
+    fi
+  elif [ "$S_COMMIT" = "$CUR" ]; then
+    echo "verdict: same session continuing; HEAD at last zsave"
+    echo "  (a recycle that restored EXACTLY the last zsave state looks identical —"
+    echo "   compare the 'booted' line above with the last-zsave timestamp)"
+  else
+    echo "verdict: HEAD($CUR) != last zsave($S_COMMIT) — new commits since last zsave (zsave soon)"
+  fi
+else
+  echo "no $STATE — fresh chat (per-chat /home/sync starts empty) or zsave never ran"
+fi
+if [ -f "$SYNC/repo.tar" ]; then
+  echo "repo.tar: $(stat -c '%s bytes, modified %y' "$SYNC/repo.tar" 2>/dev/null | cut -c1-58)"
+else
+  echo "repo.tar: absent (platform writes it on graceful shutdown; zsave refreshes it sooner)"
+fi
+
+line "git ($PROJ)"
+if [ -e "$PROJ/.git" ]; then
+  git -C "$PROJ" status -sb | head -5 | mask
+  git -C "$PROJ" log --oneline -3 2>/dev/null | mask || echo "(no commits yet)"
+  echo "remotes: $(git -C "$PROJ" remote -v 2>/dev/null | head -2 | mask | tr '\n' ';')"
+  for cf in "$SYNC/zk-remote.url" /home/user_skills/zk-remote.url; do
+    [ -s "$cf" ] && echo "credential file: $cf (zsave-maintained; holds the origin URL — never print it)"
+  done
+  WT="$(git -C "$PROJ" worktree list 2>/dev/null | tail -n +2 | mask)"
+  if [ -n "$WT" ]; then echo "worktrees:"; echo "$WT"; else echo "worktrees: none"; fi
+else
+  echo "no .git in $PROJ — bootstrap template or wiped."
+  echo "  recover: clone your remote into $PROJ  OR  see 'Restore procedures' in SKILL.md"
+fi
+
+if [ "$LIVE" = 1 ]; then
+  line "watchdog hygiene"
+  BR="$(git -C "$PROJ" branch --show-current 2>/dev/null || true)"
+  if [ -z "$BR" ] && git -C "$PROJ" rev-parse HEAD >/dev/null 2>&1; then
+    echo "detached HEAD ($(git -C "$PROJ" rev-parse --short HEAD)) — the prelude will"
+    echo "git-switch to main on the next toolcall. Note this SHA now if you need it."
+  elif [ "$BR" = "main" ]; then
+    echo "on main — watchdog prelude (git switch main) is a no-op. Safe."
+  elif ! git -C "$PROJ" show-ref --verify --quiet refs/heads/main 2>/dev/null; then
+    CURBR="$(git -C "$PROJ" branch --show-current 2>/dev/null || echo '?')"
+    if [ -n "$CURBR" ] && [ "$CURBR" != "?" ]; then
+      echo "no 'main' branch exists (current default: '$(printf '%s' "$CURBR" | mask)')!"
+      echo "  the prelude runs 'git switch main' every toolcall and fails; rename once:"
+      echo "    git -C $PROJ branch -m '$(printf '%s' "$CURBR" | mask)' main && git push origin HEAD:main"
+    else
+      echo "no 'main' branch and no commits yet — the first commit will create it;"
+      echo "  make sure it is named main: git -C $PROJ symbolic-ref HEAD refs/heads/main"
+    fi
+  else
+    echo "NOT on main ('$(printf '%s' "$BR" | mask)'): the prelude 'git switch main' will run before your"
+    echo "  next toolcall and revert working-tree files to main's content!"
+    echo "  -> git -C $PROJ switch main   (or move this work to a worktree; SKILL.md law 5)"
+  fi
+  OTHER="$(git -C "$PROJ" branch --format='%(refname:short)' 2>/dev/null | grep -vx main | tr '\n' ' ' | mask)"
+  [ -n "${OTHER// /}" ] && echo "other branches (safe on refs; never checkout them here): $OTHER"
+
+  line "kit presence"
+  for p in "$PROJ/skills/z-container/SKILL.md" "$PROJ/scripts/zsave" \
+           "$PROJ/scripts/zsession" "$PROJ/scripts/daemonize.py" \
+           "$PROJ/z-container-kit" "$SYNC/z-container-kit" \
+           "/home/user_skills/z-container-kit"; do
+    [ -e "$p" ] && echo "present: $p" || echo "MISSING: $p"
+  done
+else
+  line "watchdog hygiene"
+  echo "skipped — watchdog only applies to /home/z/my-project (ZK_PROJ override detected)"
+  line "kit presence"
+  echo "skipped — live-project check (ZK_PROJ override detected)"
+fi
+
+line "services"
+if ss -tln 2>/dev/null | grep -qE ':(3000|3001)\b'; then
+  ss -tln | grep -E ':(3000|3001)\b'
+else
+  echo "no dev server on :3000/:3001 (normal unless my-project has package.json)"
+fi
+if [ "$LIVE" = 1 ] && [ -d "$PROJ/mini-services" ]; then
+  echo "mini-services: $(ls "$PROJ/mini-services" 2>/dev/null | tr '\n' ' ')"
+fi
+
+line "recommended actions"
+n=0
+rec() { n=$((n + 1)); echo "$n. $*"; }
+
+# fresh-chat cold start: no remote, no state — print the exact bootstrap
+# sequence (do NOT recommend zsave before its script exists)
+COLD=0
+if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
+  COLD=1
+  KITSRC=""
+  for p in /home/user_skills/z-container-kit "$SYNC/z-container-kit" "$PROJ/z-container-kit"; do
+    [ -f "$p/scripts/install.sh" ] && { KITSRC="$p"; break; }
+  done
+  CRED=""
+  for cf in /home/user_skills/zk-remote.url "$SYNC/zk-remote.url"; do
+    [ -s "$cf" ] && { CRED="$cf"; break; }
+  done
+  echo "COLD START detected (no remote, no zsave state). Exact sequence:"
+  if [ -n "$KITSRC" ]; then
+    echo "  0. kit copy available at: $KITSRC"
+  else
+    echo "  0. git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit"
+    echo "     bash /tmp/my-project/kit/scripts/install.sh   # installs helpers + kit copies"
+  fi
+  if [ -n "$CRED" ]; then
+    echo "  1. git -C $PROJ remote add origin \"\$(cat $CRED)\"   # credential file found"
+  else
+    echo "  1. git -C $PROJ remote add origin https://<PAT>@github.com/<user>/<repo>.git  # ask the user if no PAT"
+  fi
+  echo "  2. git -C $PROJ fetch && git -C $PROJ reset --hard origin/main   # empty remote? skip"
+  if [ -n "$KITSRC" ]; then
+    echo "  3. bash $KITSRC/scripts/install.sh   # LOAD-BEARING: restores skills/ + helpers"
+  else
+    echo "  3. bash /tmp/my-project/kit/scripts/install.sh   # normalize all copies post-restore"
+  fi
+  echo "  4. bash $PROJ/scripts/zsave 'fresh-chat bootstrap checkpoint'"
+  echo
+fi
+
+if [ ! -e "$PROJ/.git" ]; then
+  rec "no repo — clone your remote into $PROJ or see 'Restore procedures' in SKILL.md"
+fi
+if [ "$COLD" != 1 ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
+  CRED=""
+  for cf in "$SYNC/zk-remote.url" /home/user_skills/zk-remote.url; do
+    [ -s "$cf" ] && { CRED="$cf"; break; }
+  done
+  if [ -n "$CRED" ]; then
+    rec "recover remote: git -C $PROJ remote add origin \"\$(cat $CRED)\"  (credential file found: $CRED)"
+  else
+    rec "add remote: git -C $PROJ remote add origin https://<PAT>@github.com/<user>/<repo>.git (github = only cross-chat persistence)"
+  fi
+fi
+if [ -n "$(git -C "$PROJ" status --porcelain 2>/dev/null)" ] && [ -f "$PROJ/scripts/zsave" ]; then
+  rec "dirty tree — checkpoint: bash $PROJ/scripts/zsave 'session-start checkpoint' (commits ALL current state incl. .env)"
+fi
+if [ "$LIVE" = 1 ]; then
+  BR2="$(git -C "$PROJ" branch --show-current 2>/dev/null || true)"
+  if [ -n "$BR2" ] && [ "$BR2" != "main" ]; then
+    rec "return to main: git -C $PROJ switch main"
+  fi
+  if [ ! -f "$STATE" ] && [ -f "$PROJ/scripts/zsave" ]; then
+    rec "no zsave state yet — run: bash $PROJ/scripts/zsave 'initial checkpoint'"
+  fi
+fi
+if [ "$n" -eq 0 ]; then
+  if [ "$COLD" = 1 ]; then
+    echo "no other actions — follow the cold-start sequence above."
+  else
+    echo "none — everything looks healthy. Continue work; zsave at next milestone."
+  fi
+fi
+echo "(report only — no persistent changes; mount checks use a unique .zk-rw-$$ probe file)"
