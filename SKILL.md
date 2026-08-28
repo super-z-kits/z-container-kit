@@ -2,7 +2,7 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "2.3.1"
+  version: "2.3.2"
   verified: "2026-08-28 (live experiments + 5 validation rounds; see evidence/EXPERIMENTS.md)"
 description: >
   Survival guide for the Z.ai Code sandbox container. Verified mechanics of the

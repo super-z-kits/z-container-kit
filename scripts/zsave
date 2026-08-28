@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zsave — one-command persistence for the Z container. (kit v2.3.1)
+# zsave — one-command persistence for the Z container. (kit v2.3.2)
 #
 #   0. maintain .git/info/exclude (uploads/logs/build junk stay out of git)
 #      + auto-exclude untracked NESTED git repos (scratch clones would

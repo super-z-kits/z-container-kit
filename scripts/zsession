@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # zsession — Z-container situation report at session start (read-only).
-# (kit v2.3.1)
+# (kit v2.3.2)
 # Makes no persistent changes: mount checks create+remove one unique
 # .zk-rw-$$ probe file; git commands only read (status may refresh the
 # index stat-cache, which is cosmetic).
@@ -74,7 +74,11 @@ if [ -e "$PROJ/.git" ]; then
   git -C "$PROJ" status -sb | head -5 | mask
   git -C "$PROJ" log --oneline -3 2>/dev/null | mask || echo "(no commits yet)"
   echo "remotes: $(git -C "$PROJ" remote -v 2>/dev/null | head -2 | mask | tr '\n' ';')"
-  for cf in "$SYNC/zk-remote.url" /home/user_skills/zk-remote.url; do
+  # credential files: the ZK_SYNC one always; the cross-chat user_skills one
+  # only for the live project (scratch rehearsals must not see it)
+  CFS="$SYNC/zk-remote.url"
+  [ "$LIVE" = 1 ] && CFS="$CFS /home/user_skills/zk-remote.url"
+  for cf in $CFS; do
     [ -s "$cf" ] && echo "credential file: $cf (zsave-maintained; holds the origin URL — never print it)"
   done
   WT="$(git -C "$PROJ" worktree list 2>/dev/null | tail -n +2 | mask)"
@@ -178,7 +182,9 @@ if [ ! -e "$PROJ/.git" ]; then
 fi
 if [ "$COLD" != 1 ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
   CRED=""
-  for cf in "$SYNC/zk-remote.url" /home/user_skills/zk-remote.url; do
+  CFS="$SYNC/zk-remote.url"
+  [ "$LIVE" = 1 ] && CFS="$CFS /home/user_skills/zk-remote.url"
+  for cf in $CFS; do
     [ -s "$cf" ] && { CRED="$cf"; break; }
   done
   if [ -n "$CRED" ]; then

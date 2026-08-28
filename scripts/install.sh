@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — install the z-container kit into this container. (kit v2.3.1)
+# install.sh — install the z-container kit into this container. (kit v2.3.2)
 # Safe to run from ANY kit copy, including the persistent ones
 # (/home/sync/z-container-kit, /home/user_skills/z-container-kit,
 #  z-container-kit, skills/z-container) — self-install is detected

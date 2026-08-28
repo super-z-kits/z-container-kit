@@ -66,5 +66,5 @@ can skip the clone entirely and install from there.
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` env overrides for safe scratch testing.
-- Version 2.3.1 — provenance and validation history (6 review rounds +
+- Version 2.3.2 — provenance and validation history (6 review rounds +
   cold-start usability rounds) in `reference.md` §13.
