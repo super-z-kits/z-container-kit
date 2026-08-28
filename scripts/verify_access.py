@@ -28,7 +28,7 @@ def req(url, headers, timeout=30):
 
 
 def check_github(tok):
-    print("\n========== GITHUB (GH_PAT from Doppler prd) ==========")
+    print("\n========== GITHUB (GH_PAT from Doppler (config from env file)) ==========")
     h = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json", "User-Agent": "zk-verify"}
     code, me = req("https://api.github.com/user", h)
     if code == 200:
@@ -54,7 +54,7 @@ def check_github(tok):
 
 
 def check_cloudflare(key):
-    print("\n========== CLOUDFLARE (CF_ACCOUNT_API_KEY from Doppler prd) ==========")
+    print("\n========== CLOUDFLARE (CF_ACCOUNT_API_KEY from Doppler (config from env file)) ==========")
     # Try as an API Token (Bearer) first
     h = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     code, v = req("https://api.cloudflare.com/client/v4/user/tokens/verify", h)
@@ -80,7 +80,7 @@ def check_cloudflare(key):
 
 
 def check_supabase(tok):
-    print("\n========== SUPABASE (SUPABASE_TOKEN from Doppler prd) ==========")
+    print("\n========== SUPABASE (SUPABASE_TOKEN from Doppler (config from env file)) ==========")
     h = {"Authorization": f"Bearer {tok}"}
     h = {"Authorization": f"Bearer {tok}", "User-Agent": "zk-verify"}  # audit M3: custom UA to bypass Supabase CF WAF
     # audit M3: api.supabase.com is fronted by Cloudflare WAF; default urllib UA → 403.
