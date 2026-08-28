@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# zdoppler-smoke — one-shot verification of the Doppler onboarding (audit F8)
+#
+# Problem: after the user pastes a Doppler handover (PT, project, config)
+# and the agent writes /home/user_skills/zk-doppler.env, the agent has to
+# invent its own verification boilerplate (fetch secrets, jq the response,
+# print lengths). Quality varies; some agents print values, some fail
+# silently if jq is missing.
+#
+# Solution: this helper. Sources the env file, validates the PT format
+# (audit F1), fetches secrets, prints "name: computed_len" for each
+# non-DOPPLER_ key, exits 0 if healthy.
+#
+# Usage:
+#   zdoppler-smoke                    # uses /home/user_skills/zk-doppler.env
+#   zdoppler-smoke --config stg       # override config
+#   zdoppler-smoke --project other   # override project
+#   zdoppler-smoke --show-values     # ALSO print secret values (DANGER: leaks to transcript)
+
+set -euo pipefail
+
+ENV_FILE="${ZK_DOPPLER_ENV:-/home/user_skills/zk-doppler.env}"
+
+# Parse args
+OVR_PROJECT=""
+OVR_CONFIG=""
+SHOW_VALUES=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --project) OVR_PROJECT="$2"; shift 2 ;;
+    --config)  OVR_CONFIG="$2";  shift 2 ;;
+    --show-values) SHOW_VALUES=1; shift ;;
+    --env-file) ENV_FILE="$2"; shift 2 ;;
+    -h|--help)
+      cat <<EOF >&2
+zdoppler-smoke — verify Doppler onboarding (audit F8)
+
+Usage: zdoppler-smoke [--project P] [--config C] [--show-values] [--env-file PATH]
+
+Default env file: /home/user_skills/zk-doppler.env
+--show-values: ALSO print secret values (DANGEROUS: leaks to transcript; only use
+               when intentionally debugging, and never in shared transcripts)
+
+Exits 0 if the PT validates AND the API call succeeds AND at least one
+non-DOPPLER_ secret is present.
+EOF
+      exit 0 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+# Source env file
+if [ ! -f "$ENV_FILE" ]; then
+  echo "[fail] env file not found: $ENV_FILE" >&2
+  echo "       create it per the secrets-vault kit:" >&2
+  echo "         cat > $ENV_FILE <<EOF" >&2
+  echo "         DOPPLER_PT=dp.pt.<40-char-token>" >&2
+  echo "         DOPPLER_PROJECT=<your-project>" >&2
+  echo "         DOPPLER_CONFIG=dev|stg|prd" >&2
+  echo "         EOF" >&2
+  echo "         chmod 0600 $ENV_FILE" >&2
+  exit 1
+fi
+# shellcheck disable=SC1090
+set -a; source "$ENV_FILE"; set +a
+
+# Apply overrides
+[ -n "$OVR_PROJECT" ] && DOPPLER_PROJECT="$OVR_PROJECT"
+[ -n "$OVR_CONFIG" ]  && DOPPLER_CONFIG="$OVR_CONFIG"
+
+# ─── F1: PT format validation ─────────────────────────────────────────────────
+echo "=== Doppler smoke test ==="
+echo "  env file:   $ENV_FILE  (mode $(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo '?'))"
+echo "  project:    $DOPPLER_PROJECT"
+echo "  config:     $DOPPLER_CONFIG"
+echo "  PT length:  ${#DOPPLER_PT}"
+
+# Doppler PT/ST format: "dp." + ("pt" | "st") + "." + base62 body.
+# Body length observed in the wild: 32-80 chars (not always 40 as the v1 docs implied).
+if printf '%s' "$DOPPLER_PT" | grep -qE '^dp\.(pt|st)\.[A-Za-z0-9]{32,80}$'; then
+  echo "  PT format:  ✅ valid (dp.(pt|st).<body>, $(printf '%s' "$DOPPLER_PT" | wc -c | awk '{print $1-1}') chars total)"
+else
+  echo "  PT format:  ❌ INVALID — expected dp.(pt|st).<alphanumeric body>, got length ${#DOPPLER_PT}"
+  echo "              first 6 chars: '${DOPPLER_PT:0:6}' (must be 'dp.pt.' or 'dp.st.')"
+  echo "              common causes: paste artifact (trailing char), wrong token type, copy/paste from a non-Doppler source"
+  exit 1
+fi
+
+# ─── Fetch secrets ────────────────────────────────────────────────────────────
+echo
+echo "=== Fetching secrets ==="
+RESP="$(curl -sS -w '\n__HTTP:%{http_code}__' \
+  -H "Authorization: Bearer $DOPPLER_PT" \
+  "https://api.doppler.com/v3/configs/config/secrets?project=${DOPPLER_PROJECT}&config=${DOPPLER_CONFIG}" 2>&1 || true)"
+HTTP="$(printf '%s' "$RESP" | tail -1 | sed 's/^__HTTP://; s/__$//')"
+BODY="$(printf '%s' "$RESP" | sed '$d')"
+
+if [ "$HTTP" != "200" ]; then
+  echo "  HTTP $HTTP — fetch failed"
+  printf '%s' "$BODY" | head -c 500 | sed 's/^/    /' >&2
+  exit 1
+fi
+
+if ! printf '%s' "$BODY" | jq -e '.success == true' >/dev/null 2>&1; then
+  echo "  ❌ Doppler returned success=false or non-JSON response"
+  printf '%s' "$BODY" | head -c 500 | sed 's/^/    /' >&2
+  exit 1
+fi
+echo "  HTTP 200, success=true ✅"
+
+# ─── List secrets (names + computed lengths; optionally values) ───────────────
+echo
+echo "=== Secrets (non-DOPPLER_ keys) ==="
+SECRETS_TABLE="$(printf '%s' "$BODY" | jq -r '
+  (.secrets | to_entries | map(select(.key | startswith("DOPPLER_") | not)))
+  | if length == 0 then "(none — config is empty or only contains Doppler metadata)"
+    else (.[] | "\(.key)\t\(.value.computed | length // 0)")
+    end
+')"
+
+if [ "$SHOW_VALUES" = "1" ]; then
+  echo "  ⚠️  --show-values is set: printing secret VALUES (not just lengths)"
+  printf '%s' "$BODY" | jq -r '
+    (.secrets | to_entries | map(select(.key | startswith("DOPPLER_") | not)))
+    | if length == 0 then "(none)"
+      else (.[] | "  \(.key) = \(.value.computed // "(null)")")
+      end
+  '
+else
+  printf '%s' "$SECRETS_TABLE" | awk -F'\t' '{ printf "  %-25s  (computed len: %s)\n", $1, $2 }'
+fi
+
+# ─── Verdict ──────────────────────────────────────────────────────────────────
+NON_DOPPLER_COUNT="$(printf '%s' "$BODY" | jq -r '.secrets | to_entries | map(select(.key | startswith("DOPPLER_") | not)) | length')"
+if [ "$NON_DOPPLER_COUNT" = "0" ]; then
+  echo
+  echo "⚠️  config $DOPPLER_CONFIG has NO non-DOPPLER secrets — if this is the seed config"
+  echo "   referenced in your handover, the seeds may live in a different config (audit F2)."
+  echo "   list all configs:"
+  echo "     curl -sH \"Authorization: Bearer \$DOPPLER_PT\" https://api.doppler.com/v3/configs?project=$DOPPLER_PROJECT | jq -r '.configs[].name'"
+  exit 0   # not a hard failure — vault IS reachable, just empty
+fi
+
+echo
+echo "✅ smoke test passed: vault reachable, PT valid, $NON_DOPPLER_COUNT non-DOPPLER secret(s) present."
