@@ -72,10 +72,11 @@ fi
 line "git ($PROJ)"
 if [ -e "$PROJ/.git" ]; then
   # OF-13: pre-label tool-results/ as expected (skill-read artifact), not suspicious.
-  # The platform's Read tool spills large files to tool-results/, which appears as
-  # untracked in git status. Without this note, agents waste calls investigating.
-  if [ -d "$PROJ/tool-results" ] && git -C "$PROJ" status --porcelain 2>/dev/null | grep -q 'tool-results'; then
-    echo "tool-results/ (untracked): expected — skill-read spill artifacts; safe to ignore or rm -rf"
+  # R10 fix: the old condition `git status --porcelain | grep -q 'tool-results'` was
+  # unreachable because zsave auto-adds /tool-results/ to .git/info/exclude. Just check
+  # if the dir exists — if it does, it's from skill reads spilling large files.
+  if [ -d "$PROJ/tool-results" ]; then
+    echo "tool-results/ (present): expected — skill-read spill artifacts; safe to ignore or rm -rf"
   fi
   git -C "$PROJ" status -sb | head -5 | mask
   git -C "$PROJ" log --oneline -3 2>/dev/null | mask || echo "(no commits yet)"

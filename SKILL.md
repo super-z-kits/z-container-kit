@@ -91,12 +91,18 @@ needs no PAT. Two alternatives for the remote-add step:
 - **B3 — nothing**: ask the user for the PAT, then `git remote add origin
   https://<PAT>@github.com/<u>/<r>.git`.
 
-**After recovery (OF-8):** read `/home/z/my-project/worklog.md` to get the
-prior session's context (Task IDs, what was done, what's pending). The worklog
-re-appears after `reset --hard origin/main` — it's not visible before the reset
-because the workspace is the boot template. zsession's "create worklog" rec is
-stale once recovery completes (the worklog already exists); ignore that rec if
-the file is present and non-empty.
+**After recovery (OF-8):** read the **tail** of `/home/z/my-project/worklog.md`
+(last Task ID block — the file can be 30+ KB / 900+ lines, too large for one
+Read; use `tail -100 worklog.md` or `Read` with offset to get the latest
+session context). The worklog re-appears after `reset --hard origin/main` —
+it's not visible before the reset because the workspace is the boot template.
+zsession's "create worklog" rec is stale once recovery completes (the worklog
+already exists); ignore that rec if the file is present and non-empty.
+
+**Kit version drift (R10 #4):** the git-tracked kit copy at
+`/home/z/my-project/z-container-kit/` may lag behind the installed copy at
+`/home/user_skills/z-container-kit/` if you haven't run `install.sh` yet this
+session. Always run `install.sh` before trusting the git-tracked copy's docs.
 
 ## Saving work — zsave
 

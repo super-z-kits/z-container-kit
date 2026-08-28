@@ -13,7 +13,37 @@
 
 set -euo pipefail
 
-KEEP="${1:-2}"
+# Parse args — R10 critical fix: --help/--dry-run/-h were being treated as KEEP
+# value, causing the integer comparison to fail and ALL backups to be deleted.
+KEEP="2"
+DRY_RUN=0
+FORCE=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      cat <<EOF
+zcleanup-backups — prune old backup dirs from /home/user_skills/
+
+Usage: zcleanup-backups [N] [--dry-run] [--force]
+  N         keep last N backups per skill (default: 2; 0 = delete all)
+  --dry-run show what would be deleted without deleting
+  --force    skip confirmation prompt (use with caution)
+
+Env: USER_SKILLS_DIR (default: /home/user_skills)
+EOF
+      exit 0 ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    --force) FORCE=1; shift ;;
+    -*|--) echo "unknown flag: $1 (use --help)" >&2; exit 2 ;;
+    *)
+      if ! [[ "$1" =~ ^[0-9]+$ ]]; then
+        echo "error: KEEP must be a non-negative integer, got: $1" >&2
+        exit 2
+      fi
+      KEEP="$1"; shift ;;
+  esac
+done
+
 USER_SKILLS_DIR="${USER_SKILLS_DIR:-/home/user_skills}"
 
 if [ ! -d "$USER_SKILLS_DIR" ]; then
@@ -21,7 +51,29 @@ if [ ! -d "$USER_SKILLS_DIR" ]; then
   exit 0
 fi
 
+# Count backups first (for confirmation)
+BACKUP_COUNT=$(ls -d "$USER_SKILLS_DIR"/*.pre-update-backup-* \
+                  "$USER_SKILLS_DIR"/*.pre-export-* \
+                  "$USER_SKILLS_DIR"/*.pre-round-* \
+                  "$USER_SKILLS_DIR"/*.pre-rollback-* 2>/dev/null | wc -l)
+
+if [ "$BACKUP_COUNT" -eq 0 ]; then
+  echo "no backup dirs found in $USER_SKILLS_DIR"
+  exit 0
+fi
+
 echo "=== backup cleanup: keep last $KEEP per skill in $USER_SKILLS_DIR ==="
+[ "$DRY_RUN" = 1 ] && echo "  (DRY RUN — no deletions will happen)"
+
+# Confirmation prompt (unless --force or --dry-run)
+if [ "$FORCE" = 0 ] && [ "$DRY_RUN" = 0 ]; then
+  echo "  found $BACKUP_COUNT backup dir(s)"
+  read -r -p "  proceed with deletion? [y/N] " ans </dev/tty || ans=""
+  case "$ans" in
+    y|Y) echo "  proceeding..." ;;
+    *)   echo "  aborted."; exit 0 ;;
+  esac
+fi
 
 # Group backups by skill name (strip the .pre-* suffix)
 declare -A counts
@@ -55,8 +107,12 @@ for skill in "${!counts[@]}"; do
       echo "    keep: $(basename "$backup")"
       KEPT=$((KEPT + 1))
     else
-      rm -rf "$backup"
-      echo "    delete: $(basename "$backup")"
+      if [ "$DRY_RUN" = 1 ]; then
+        echo "    would delete: $(basename "$backup")"
+      else
+        rm -rf "$backup"
+        echo "    deleted: $(basename "$backup")"
+      fi
       DELETED=$((DELETED + 1))
     fi
   done <<< "$backups"
