@@ -1,6 +1,6 @@
 # z-container-kit
 
-Survival kit for the Z.ai Code sandbox container ("z-container"): verified
+Survival kit for the sandbox container ("z-container"): verified
 mechanics of the git HEAD watchdog (a `git switch main` prelude that runs
 before every toolcall), the persistence model (overlay vs PolarFS vs ossfs
 vs github; `repo.tar` restore semantics), background-process survival
