@@ -138,6 +138,17 @@ if [ "$LIVE" = 1 ]; then
   OTHER="$(git -C "$PROJ" branch --format='%(refname:short)' 2>/dev/null | grep -vx main | tr '\n' ' ' | mask)"
   [ -n "${OTHER// /}" ] && echo "other branches (safe on refs; never checkout them here): $OTHER"
 
+  # R10-5: detect placeholder git identity (Vercel blocks deploys from Z User <z@container>)
+  GIT_NAME=$(git -C "$PROJ" config user.name 2>/dev/null || true)
+  GIT_EMAIL=$(git -C "$PROJ" config user.email 2>/dev/null || true)
+  if [ "$GIT_NAME" = "Z User" ] || [ "$GIT_EMAIL" = "z@container" ] || [ -z "$GIT_NAME" ]; then
+    echo "⚠️  placeholder git identity detected: name='$GIT_NAME' email='$GIT_EMAIL'"
+    echo "    Vercel blocks deploys from Z User <z@container>. Fix before committing:"
+    echo "      git config user.name \"<GitHub username>\""
+    echo "      git config user.email \"<id>+<username>@users.noreply.github.com\""
+    echo "    (get your exact noreply email from GitHub settings)"
+  fi
+
   line "kit presence"
   for p in "$PROJ/skills/z-container/SKILL.md" "$PROJ/scripts/zsave" \
            "$PROJ/scripts/zsession" "$PROJ/scripts/daemonize.py" \

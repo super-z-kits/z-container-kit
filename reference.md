@@ -172,7 +172,7 @@ unknown; ossfs df shows 16E (unlimited-looking) — actual bucket quota unknown.
 
 - Bridge: `/app/main.py` (root, unreadable) relays to
   `https://internal-api.z.ai/v1` using `/etc/.z-ai-config` [S].
-- `/etc/.z-ai-config` per session: baseUrl, apiKey ("Z.ai" placeholder),
+- `/etc/.z-ai-config` per session: baseUrl, apiKey ("the platform" placeholder),
   chatId (matches this chat's UUID), token (JWT), userId [V]. Do not print or
   exfiltrate the token.
 - `z-ai-web-dev-sdk` global bun package; config search order: cwd → ~ →

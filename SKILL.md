@@ -2,10 +2,10 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "2.5.0"
+  version: "2.6.0"
   verified: "2026-08-28 (live experiments + 5 validation rounds; see evidence/EXPERIMENTS.md)"
 description: >
-  Survival guide for the Z.ai Code sandbox container. Verified mechanics of the
+  Survival guide for the sandbox container. Verified mechanics of the
   Git HEAD watchdog (a `git switch main` prelude that runs before EVERY toolcall),
   the persistence model (overlay vs PolarFS vs ossfs vs github; repo.tar restore
   semantics), background-process survival (double-fork, mini-services,
@@ -25,8 +25,8 @@ wire your workspace remote (PAT typed once), `fetch && reset --hard origin/main`
 install.sh again, `zsave`. Full sequence in "Session start" below.
 
 Every claim is graded: **[V]** verified live 2026-08-28, **[S]** from `/start.sh`
-source, **[I]** inherited/unverified — never "test" the deadly ones. Long-form
-forensic detail in `reference.md`; operational deep-dive modules in `kb/`.
+source, **[I]** inherited/unverified — never "test" the deadly ones. Operational
+deep-dive modules in `kb/` (read when the specific topic is relevant).
 
 Kit copies live at `/home/z/my-project/z-container-kit/` (git-tracked),
 `/home/sync/z-container-kit/`, `/home/user_skills/z-container-kit/`, plus a
@@ -40,6 +40,14 @@ chat), reinstall from any copy: `bash <kit>/scripts/install.sh`.
 3. **Set git identity to your real GitHub account.** `git config user.name "<GitHub username>"` and `git config user.email "<id>+<username>@users.noreply.github.com"` — the exact noreply email from GitHub settings, never an invented ID. Vercel blocks deploys authored by `Z User <z@container>` or any email not on your GitHub account.
 4. **Delegate to sub-agents to avoid excessive bash calls.** Rapid toolcall loops risk the 403 lockout (see law 6). Spawn sub-agents for repetitive probes.
 5. **The watchdog force-checkouts `/home/z/my-project` to main every ~20s**, reverting any file that differs between branches. Solution: work in a clone outside the watched path (e.g. `/tmp/my-project/worktrees/<name>`), or stay on main and use a separate fork repo if you truly need branch isolation.
+
+**⚠️ Parallel sessions (R10-13):** `/home/user_skills/` is **per-user, shared
+across concurrent chats**. The platform runs 2-3 concurrent sessions under the
+same account — they all see the same `/home/user_skills/`. This is a boon
+(skills installed once are available everywhere) but can cause surprises:
+parallel sessions can silently overwrite each other's `zk-doppler.env`,
+cause push divergence on the backup repo, or write phantom files. See
+`kb/parallel-sessions.md` for the full hazard analysis + mitigations.
 
 ## The ten laws
 
@@ -346,7 +354,44 @@ across calls. Audit-callout detail per helper (F6, F8, F10, M7, M3, M4):
 
 ## DOPPLER_TOKEN_SEED callout
 
-If your Doppler vault contains a secret named `DOPPLER_TOKEN_SEED` with a `dp.pt.*`
-prefix (a Personal Token stored in the vault), this violates secrets-vault-kit's
-own guidance. Don't auto-rotate or auto-delete — flag to the user. Detail:
-`kb/doppler-token-seed.md`.
+**Detection (R10-2 fix):** `zdoppler-smoke` filters out ALL `DOPPLER_*` keys,
+so the seed is invisible in the canonical verification output. You MUST sweep
+all configs (not just the handover config) to detect it:
+
+```bash
+set -a; source /home/user_skills/zk-doppler.env; set +a
+# List all configs, then check each for DOPPLER_TOKEN_SEED
+for cfg in $(curl -sS -H "Authorization: Bearer $DOPPLER_PT" \
+  "https://api.doppler.com/v3/configs?project=$DOPPLER_PROJECT" \
+  | jq -r '.configs[].name'); do
+  SEED=$(curl -sS -H "Authorization: Bearer $DOPPLER_PT" \
+    "https://api.doppler.com/v3/configs/config/secret?project=$DOPPLER_PROJECT&config=$cfg&name=DOPPLER_TOKEN_SEED" \
+    | jq -r '.value.computed // empty')
+  if [ -n "$SEED" ]; then
+    echo "  ⚠️ DOPPLER_TOKEN_SEED found in config '$cfg' (length ${#SEED}, prefix ${SEED:0:6})"
+  fi
+done
+```
+
+If found, this violates secrets-vault-kit's own fact #3. Don't auto-rotate or
+auto-delete — flag to the user. Detail + policy: `kb/doppler-token-seed.md`.
+
+## KB modules index (read when the topic is relevant)
+
+- `kb/bootstrap.md` — fresh-chat bootstrap paths A/B, credential-file shortcut, branch-rename
+- `kb/zsave-internals.md` — full 6-step zsave pipeline with exclude rules
+- `kb/watchdog-advanced.md` — dirty shield, gitdir relocation, orphan recovery
+- `kb/watchdog-forensic.md` — forensic evidence for watchdog mechanics (the WHY)
+- `kb/persistence-namespaces.md` — per-chat vs per-user namespace inference
+- `kb/repo-tar-mechanics.md` — boot/shutdown semantics, .gitignore auto-heal
+- `kb/restore-procedures.md` — full A/B/C/D recovery flow
+- `kb/networking.md` — ports, Caddy, XTransformPort, egress detail
+- `kb/dev-server-database.md` — :3000 dev server, Prisma + SQLite detail
+- `kb/secrets-audits.md` — F11/F13/F18/F21/F12/F15 audit callouts
+- `kb/sub-agents.md` — Task tool, worklog protocol (container-specific)
+- `kb/terminal-lockout.md` — the irreversible caddy/port-loop 403 hazard
+- `kb/helpers-audits.md` — per-helper audit callouts (F6/F8/F10/M7/M3/M4)
+- `kb/doppler-token-seed.md` — PT-in-vault warning + detection policy
+- `kb/testing-helpers.md` — safe scratch testing of zsave/zsession
+- `kb/parallel-sessions.md` — concurrent-chat hazards on shared `/home/user_skills/`
+- `kb/container-internals.md` — runtime identity, mount topology, storage performance

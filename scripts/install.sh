@@ -94,7 +94,7 @@ copy_into() {  # copy_into <dest-dir> — atomic swap; self-install aware
 copy_into "$PROJ/skills/z-container"
 
 mkdir -p "$PROJ/scripts"
-for s in zsave zsession daemonize.py install.sh wdt_watch.py zremote zdoppler-smoke zkit-selftest zcleanup-backups; do
+for s in zsave zsession daemonize.py install.sh wdt_watch.py zremote zdoppler-smoke zkit-selftest zcleanup-backups doppler_fetch.py verify_access.py; do
   if [ -f "$KIT/scripts/$s" ]; then
     cp -f "$KIT/scripts/$s" "$PROJ/scripts/$s" && chmod 0755 "$PROJ/scripts/$s" || INSTALL_FAIL=1
   fi
