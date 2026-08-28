@@ -73,13 +73,30 @@ line "git ($PROJ)"
 if [ -e "$PROJ/.git" ]; then
   git -C "$PROJ" status -sb | head -5 | mask
   git -C "$PROJ" log --oneline -3 2>/dev/null | mask || echo "(no commits yet)"
-  echo "remotes: $(git -C "$PROJ" remote -v 2>/dev/null | head -2 | mask | tr '\n' ';')"
-  # credential files: the ZK_SYNC one always; the cross-chat user_skills one
-  # only for the live project (scratch rehearsals must not see it)
+  # F23 (audit): the kit's own SKILL.md law says "never `git remote -v` in transcript".
+  # The previous version of this line did exactly that (piped through `mask`, which
+  # catches known prefixes, but it's still a violation of the kit's own rule).
+  # Switch to names-only `git remote`, then surface the origin URL via `get-url`
+  # with explicit masking for known token prefixes.
+  echo "remotes: $(git -C "$PROJ" remote 2>/dev/null | tr '\n' ' ')"
+  ORIG_URL="$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)"
+  if [ -n "$ORIG_URL" ]; then
+    echo "  origin (masked): $(printf '%s' "$ORIG_URL" | mask)"
+  fi
+  # F17 (audit): print what URL the credential file points to (masked) so the
+  # agent can sanity-check it BEFORE doing recovery. Previously, the kit just
+  # said "credential file exists; holds the origin URL — never print it" — but
+  # an agent doing fresh-chat recovery has no way to know whether the URL is
+  # the RIGHT one for this session. Showing the masked URL lets the agent
+  # immediately spot a stale credential file (audit F16/F17 root cause).
   CFS="$SYNC/zk-remote.url"
   [ "$LIVE" = 1 ] && CFS="$CFS /home/user_skills/zk-remote.url"
   for cf in $CFS; do
-    [ -s "$cf" ] && echo "credential file: $cf (zsave-maintained; holds the origin URL — never print it)"
+    if [ -s "$cf" ]; then
+      CF_URL="$(cat "$cf" 2>/dev/null || true)"
+      echo "credential file: $cf"
+      echo "  → $(printf '%s' "$CF_URL" | mask)"
+    fi
   done
   WT="$(git -C "$PROJ" worktree list 2>/dev/null | tail -n +2 | mask)"
   if [ -n "$WT" ]; then echo "worktrees:"; echo "$WT"; else echo "worktrees: none"; fi

@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# zremote — PAT-safe git remote viewer (audit F6)
+#
+# Problem: the z-container-kit SKILL.md warns "never `git remote -v` in
+# transcript — use `git remote` (names only)" because `git remote -v` prints
+# the origin URL with the embedded PAT into the transcript. But every
+# developer's muscle memory is `git remote -v`. Willpower is not a security
+# boundary.
+#
+# Solution: this helper. Default behavior = `git remote` (names only). The
+# `--show-urls` flag prints the URLs with known token prefixes masked
+# (ghp_*, dp.*, cfat_*, sbp_*). Use this instead of `git remote -v`.
+#
+# Usage:
+#   zremote                  # list remote names only (safe)
+#   zremote --show-urls      # list remotes with URLs, tokens masked
+#   zremote --show-urls -n 1 # limit to first remote
+#   zremote get-url origin   # alias for `git remote get-url`, but masks tokens
+
+set -euo pipefail
+
+PROJ="${ZK_PROJ:-/home/z/my-project}"
+
+# Token prefixes to mask in any printed URL.
+# Format: prefix|suffix (e.g. ghp_|<nothing>) — we replace everything between
+# the prefix start and the next non-token char.
+mask_url() {
+  sed -E \
+    -e 's|(ghp_[A-Za-z0-9]{36,40})|(***GH-PAT***)|g' \
+    -e 's|(github_pat_[A-Za-z0-9_]{20,90})|(***GH-PAT***)|g' \
+    -e 's|(dp\.[a-z]+\.[A-Za-z0-9]{20,60})|(***DOPPLER***)|g' \
+    -e 's|(cfat_[A-Za-z0-9]{20,60})|(***CF-TOKEN***)|g' \
+    -e 's|(sbp_[A-Za-z0-9]{20,60})|(***SUPABASE***)|g'
+}
+
+mode="names"
+if [ "${1:-}" = "--show-urls" ] || [ "${1:-}" = "-v" ]; then
+  mode="urls"
+  shift
+fi
+
+case "${1:-}" in
+  "" )
+    if [ "$mode" = "names" ]; then
+      git -C "$PROJ" remote 2>/dev/null || true
+    else
+      # Print "name<TAB>url-masked" per remote
+      for r in $(git -C "$PROJ" remote 2>/dev/null); do
+        url="$(git -C "$PROJ" remote get-url "$r" 2>/dev/null || echo '?')"
+        printf '%s\t%s\n' "$r" "$(printf '%s' "$url" | mask_url)"
+      done
+    fi
+    ;;
+  get-url )
+    shift
+    target="${1:-origin}"
+    url="$(git -C "$PROJ" remote get-url "$target" 2>/dev/null || true)"
+    if [ -n "$url" ]; then
+      printf '%s\n' "$url" | mask_url
+    else
+      echo "no remote named '$target'" >&2
+      exit 1
+    fi
+    ;;
+  * )
+    cat <<EOF >&2
+zremote — PAT-safe git remote viewer (audit F6)
+
+Usage:
+  zremote                  # list remote names only (safe default)
+  zremote --show-urls      # list remotes with URLs (tokens masked)
+  zremote get-url <name>   # print URL for one remote (tokens masked)
+
+Why: 'git remote -v' prints the embedded PAT into the transcript.
+This helper masks ghp_*, github_pat_*, dp.*, cfat_*, sbp_* before printing.
+EOF
+    exit 2
+    ;;
+esac
