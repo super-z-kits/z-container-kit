@@ -43,7 +43,7 @@ chat), reinstall from any copy: `bash <kit>/scripts/install.sh`.
 
 ## The ten laws
 
-1. **Session starts with `bash /home/z/my-project/scripts/zsession`** — read its report before touching anything.
+1. **Session starts with `bash /home/z/my-project/scripts/zsession`** — read its report before touching anything. If `scripts/` is empty (fresh-chat boot template), run the surviving copy at `/home/user_skills/z-container-kit/scripts/zsession` instead.
 2. **Work on `main` inside `/home/z/my-project`.** The watchdog runs `git switch main` before every toolcall; on main it is a no-op, on any other branch it reverts your working files.
 3. **End every milestone with `bash /home/z/my-project/scripts/zsave "msg"`** — commit + push + `/home/sync` snapshot + `repo.tar` refresh in one command.
 4. **Overlay is not a disk.** Only `/home/sync`, `/tmp/my-project`, `my-project/upload/`, `/home/user_skills`, and github survive a recycle. `/home/z/my-project` survives only via `repo.tar` (graceful shutdown) or your own `zsave`. Of these, only github (and probably `/home/user_skills`) crosses into a NEW chat.
@@ -83,6 +83,13 @@ needs no PAT. If `/home/user_skills/zk-remote.url` survived, replace the
 remote-add with `git remote add origin "$(cat /home/user_skills/zk-remote.url)"`
 but still run the sanity-check log line — a stale credential file (audit F16)
 can silently point at a different repo.
+
+**After recovery (OF-8):** read `/home/z/my-project/worklog.md` to get the
+prior session's context (Task IDs, what was done, what's pending). The worklog
+re-appears after `reset --hard origin/main` — it's not visible before the reset
+because the workspace is the boot template. zsession's "create worklog" rec is
+stale once recovery completes (the worklog already exists); ignore that rec if
+the file is present and non-empty.
 
 ## Saving work — zsave
 
