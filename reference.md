@@ -299,7 +299,11 @@ history: 2.0.0 — first evidence-graded release; 2.1.0 — round-1 fixes;
 persistence; 2.2.1 — round-4 fixes (branch/state masking, recovery-doc
 hardening); 2.2.2 — round-5 containment audit (zip auto-refresh, explicit
 PAT contract, fileMode quirk fix); 2.2.3 — round-5 fixes (SKILL.md
-repo-scrub, zip-as-delivery-vehicle model).
+repo-scrub, zip-as-delivery-vehicle model); 2.3.0 — round-6 dogfood fixes
+(cold-start path A, zsession bootstrap detection, zsave nested-repo guard,
+repo-root layout); 2.3.1 — cold-start usability round (install.sh strips
+VCS metadata from kit copies + zip, TL;DR card, absolute-path idioms,
+PAT-once note).
 
 Round 6 (2026-08-28, dogfood session) — a fresh session bootstrapped purely
 via the kit's own documented onboarding (credential-file path, live) and
@@ -322,4 +326,15 @@ download/z-container-kit (the platform's own deliverables dir) to
 z-container-kit at the repo root, with install.sh auto-removing legacy
 copies; a clean, project-detail-free variant of the kit is published to
 the canonical public home (see its README for the bootstrap one-liner).
+Round 6 also ran a cold-start usability test (sub-agent ut1, given only a
+PAT + the public repo URL, scratch dirs): every documented command worked
+first-try (verdict MINOR FRICTION, 20 toolcalls), and it caught a real bug —
+install.sh planted the bootstrap clone's `.git` into every kit copy
+(broken-gitlink / silently-untracked kit files; 45 stray entries in the
+portable zip), driving v2.3.1: copy_into() and the zip build now strip all
+VCS metadata. Also in v2.3.1: cold-start TL;DR at the top of SKILL.md,
+absolute `git -C /home/z/my-project` idioms in the path-A block (cwd no
+longer ambiguous), a PAT-typed-once note (the remote-add is the single
+ sanctioned echo; helpers mask everything after), and the zsave nested-repo
+warning now spells out the consequence (new files inside stay untracked).
 Supersedes the two inline v1 documents.

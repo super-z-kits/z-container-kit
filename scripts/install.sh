@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — install the z-container kit into this container. (kit v2.3.0)
+# install.sh — install the z-container kit into this container. (kit v2.3.1)
 # Safe to run from ANY kit copy, including the persistent ones
 # (/home/sync/z-container-kit, /home/user_skills/z-container-kit,
 #  z-container-kit, skills/z-container) — self-install is detected
@@ -57,6 +57,12 @@ copy_into() {  # copy_into <dest-dir> — atomic swap; self-install aware
   fi
   rm -rf "$d.incoming"
   if cp -r "$KIT" "$d.incoming" 2>/dev/null; then
+    # strip VCS metadata: a kit source that is a git CLONE (cold-start path)
+    # carries a .git dir — planted into kit copies it turns them into nested
+    # repos (broken gitlinks / silently-untracked kit files). Kit copies are
+    # plain dirs by design; the workspace repo tracks them from OUTSIDE.
+    rm -rf "$d.incoming/.git"
+    find "$d.incoming" -name .git -exec rm -rf {} + 2>/dev/null
     # normalize: file modes to 0644 (avoids mode-only git dirt on tracked
     # copies; scripts run via `bash <script>`, so +x is unneeded); strip
     # any __pycache__ bytecode cruft
@@ -112,8 +118,12 @@ copy_into /home/user_skills/z-container-kit
 if [ -d /home/user_skills/z-container-kit ]; then
   ZT="/tmp/.zk-zipstage-$$"
   rm -rf "$ZT"; mkdir -p "$ZT"
-  if cp -r /home/user_skills/z-container-kit "$ZT/z-container" 2>/dev/null \
-     && (cd "$ZT" && zip -qr z-container.zip z-container) 2>/dev/null \
+  if cp -r /home/user_skills/z-container-kit "$ZT/z-container" 2>/dev/null; then
+    # belt-and-braces: never ship VCS metadata in the portable zip
+    rm -rf "$ZT/z-container/.git"
+    find "$ZT/z-container" -name .git -exec rm -rf {} + 2>/dev/null
+  fi
+  if [ -d "$ZT/z-container" ] && (cd "$ZT" && zip -qr z-container.zip z-container) 2>/dev/null \
      && mv -f "$ZT/z-container.zip" /home/user_skills/z-container.zip 2>/dev/null; then
     echo "[ok] portable zip -> /home/user_skills/z-container.zip"
   else

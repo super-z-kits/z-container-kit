@@ -2,7 +2,7 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "2.3.0"
+  version: "2.3.1"
   verified: "2026-08-28 (live experiments + 5 validation rounds; see evidence/EXPERIMENTS.md)"
 description: >
   Survival guide for the Z.ai Code sandbox container. Verified mechanics of the
@@ -17,6 +17,12 @@ description: >
 ---
 
 # Z-Container Survival Guide v2
+
+**Cold start TL;DR** (fresh chat, PAT + kit repo URL, nothing else): clone
+`https://github.com/super-z-kits/z-container-kit` to a scratch path, run its
+`scripts/install.sh`, wire your workspace remote (PAT typed once),
+`fetch && reset --hard origin/main`, install.sh again, `zsave`. Full sequence:
+"Fresh-chat bootstrap", path A, below.
 
 Operational rules for this sandbox, replacing the v1 notes. Every claim is graded:
 
@@ -71,13 +77,18 @@ and prints this same sequence). Two paths:
 URL, nothing else; `/home/user_skills` empty):
 
 ```
-git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit
+git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit   # any scratch path works
 bash /tmp/my-project/kit/scripts/install.sh    # helpers + kit copies everywhere
-git remote add origin https://<PAT>@github.com/<user>/<repo>.git   # the repo backing THIS workspace
-git fetch && git reset --hard origin/main      # restore the workspace (empty remote? skip)
-bash /tmp/my-project/kit/scripts/install.sh    # normalize all copies post-restore
-bash scripts/zsave "fresh-chat bootstrap checkpoint"
+git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git   # the repo backing THIS workspace
+git -C /home/z/my-project fetch && git -C /home/z/my-project reset --hard origin/main   # restore the workspace (empty remote? skip)
+bash /tmp/my-project/kit/scripts/install.sh    # normalize all copies post-restore (install strips any clone .git — copies stay plain dirs)
+bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
 ```
+
+The PAT is typed exactly ONCE (the remote-add line) — it is already in the
+transcript via the user's message, and every helper masks it from here on
+(rotate at github.com/settings/tokens anytime if concerned). The clone itself
+needs no PAT — the kit repo is public.
 
 **B. Something survived** (credential file or kit copy in `/home/user_skills`):
 recover the remote — every successful `zsave` writes a `zk-remote.url`

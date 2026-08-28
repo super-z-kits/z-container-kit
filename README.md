@@ -15,7 +15,7 @@ The experiment log backing the [V] grades is `evidence/EXPERIMENTS.md`.
 
 ```bash
 # 0) get the kit (public repo — no PAT needed for the clone itself)
-git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit
+git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit   # any scratch path works
 
 # 1) install helpers + kit copies into the workspace
 bash /tmp/my-project/kit/scripts/install.sh
@@ -32,6 +32,11 @@ bash /tmp/my-project/kit/scripts/install.sh
 # 5) re-anchor persistence (commit + push + snapshot + repo.tar in one shot)
 bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
 ```
+
+The PAT is typed exactly once (step 2) — it is already in the transcript via
+the user's message; every helper masks it in all subsequent output (rotate at
+github.com/settings/tokens anytime if concerned). install.sh strips any
+clone-borne `.git` from kit copies, so they stay plain, trackable directories.
 
 Then run `bash /home/z/my-project/scripts/zsession` (situation report) and
 read `SKILL.md` — the ten laws come first.
@@ -61,5 +66,5 @@ can skip the clone entirely and install from there.
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` env overrides for safe scratch testing.
-- Version 2.3.0 — provenance and validation history (6 review rounds) in
-  `reference.md` §13.
+- Version 2.3.1 — provenance and validation history (6 review rounds +
+  cold-start usability rounds) in `reference.md` §13.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zsave — one-command persistence for the Z container. (kit v2.3.0)
+# zsave — one-command persistence for the Z container. (kit v2.3.1)
 #
 #   0. maintain .git/info/exclude (uploads/logs/build junk stay out of git)
 #      + auto-exclude untracked NESTED git repos (scratch clones would
@@ -92,7 +92,7 @@ if [ -n "$NESTED" ]; then
     else
       if mkdir -p "$(dirname "$EXCL")" 2>/dev/null; then
         grep -qxF "/$nd/" "$EXCL" 2>/dev/null || echo "/$nd/" >> "$EXCL" 2>/dev/null
-        echo "[ok] auto-excluded nested git repo: $nd (scratch clone — kept out of git)"
+        echo "[ok] auto-excluded nested git repo: $nd ('scratch clone' — kept out of git; NEW files inside it will not be tracked)"
       fi
     fi
   done <<EOF
