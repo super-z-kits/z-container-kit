@@ -79,10 +79,17 @@ bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
 ```
 
 PAT is typed exactly once (the remote-add line). The kit repo is public — clone
-needs no PAT. If `/home/user_skills/zk-remote.url` survived, replace the
-remote-add with `git remote add origin "$(cat /home/user_skills/zk-remote.url)"`
-but still run the sanity-check log line — a stale credential file (audit F16)
-can silently point at a different repo.
+needs no PAT. Two alternatives for the remote-add step:
+
+- **B1 — credential file survived** (most common in Path B): replace the
+  remote-add with `git remote add origin "$(cat /home/user_skills/zk-remote.url)"`.
+  Still run the sanity-check log line — a stale credential file (audit F16)
+  can silently point at a different repo.
+- **B2 — no PAT, no credential file, but Doppler vault has GH_PAT** (Path C,
+  see secrets-vault-kit): fetch GH_PAT from the vault via the M7 staging
+  pattern, then `git remote add origin "https://${GH_PAT}@github.com/<user>/<repo>.git"`.
+- **B3 — nothing**: ask the user for the PAT, then `git remote add origin
+  https://<PAT>@github.com/<u>/<r>.git`.
 
 **After recovery (OF-8):** read `/home/z/my-project/worklog.md` to get the
 prior session's context (Task IDs, what was done, what's pending). The worklog
@@ -321,6 +328,7 @@ Kit helpers in `scripts/`:
 - `zremote` — PAT-masking `git remote` viewer (replaces `git remote -v`)
 - `zdoppler-smoke` — one-shot Doppler vault verification
 - `zkit-selftest` — end-to-end save/wipe/recover smoke test
+- `zcleanup-backups` — prune old `.pre-update-backup-*` / `.pre-export-*` dirs from `/home/user_skills/` (OF-14: keeps last 2 per skill by default; `zcleanup-backups 5` to keep more, `0` to delete all)
 
 **Python (complementary):**
 - `doppler_fetch.py` — urllib version of `zdoppler-smoke`; stages secrets to `/tmp/my-project/doppler-secrets.json`

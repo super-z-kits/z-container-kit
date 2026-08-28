@@ -68,6 +68,13 @@ copy_into() {  # copy_into <dest-dir> — atomic swap; self-install aware
     # any __pycache__ bytecode cruft
     find "$d.incoming" -type f -exec chmod 0644 {} + 2>/dev/null
     find "$d.incoming" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null
+    # OF-10 fix: preserve .installed-from provenance file if the old destination had one.
+    # The kit source (from git clone) doesn't carry .installed-from (it's git-ignored);
+    # without this, every install.sh run silently deletes the provenance, causing
+    # unexplained deletions in the bootstrap checkpoint commit + losing drift-detection data.
+    if [ -f "$d/.installed-from" ]; then
+      cp "$d/.installed-from" "$d.incoming/.installed-from" 2>/dev/null
+    fi
     rm -rf "$d"
     if mv -f "$d.incoming" "$d"; then
       echo "[ok] kit -> $d"
@@ -87,7 +94,7 @@ copy_into() {  # copy_into <dest-dir> — atomic swap; self-install aware
 copy_into "$PROJ/skills/z-container"
 
 mkdir -p "$PROJ/scripts"
-for s in zsave zsession daemonize.py install.sh wdt_watch.py zremote zdoppler-smoke zkit-selftest; do
+for s in zsave zsession daemonize.py install.sh wdt_watch.py zremote zdoppler-smoke zkit-selftest zcleanup-backups; do
   if [ -f "$KIT/scripts/$s" ]; then
     cp -f "$KIT/scripts/$s" "$PROJ/scripts/$s" && chmod 0755 "$PROJ/scripts/$s" || INSTALL_FAIL=1
   fi

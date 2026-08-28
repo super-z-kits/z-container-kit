@@ -71,6 +71,12 @@ fi
 
 line "git ($PROJ)"
 if [ -e "$PROJ/.git" ]; then
+  # OF-13: pre-label tool-results/ as expected (skill-read artifact), not suspicious.
+  # The platform's Read tool spills large files to tool-results/, which appears as
+  # untracked in git status. Without this note, agents waste calls investigating.
+  if [ -d "$PROJ/tool-results" ] && git -C "$PROJ" status --porcelain 2>/dev/null | grep -q 'tool-results'; then
+    echo "tool-results/ (untracked): expected — skill-read spill artifacts; safe to ignore or rm -rf"
+  fi
   git -C "$PROJ" status -sb | head -5 | mask
   git -C "$PROJ" log --oneline -3 2>/dev/null | mask || echo "(no commits yet)"
   # F23 (audit): the kit's own SKILL.md law says "never `git remote -v` in transcript".

@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# zcleanup-backups — prune old backup dirs from /home/user_skills/
+#
+# OF-14: /home/user_skills/ accumulates .pre-update-backup-*, .pre-export-*,
+# .pre-round-*, .pre-rollback-* dirs from install-user-skill + manual cp -r.
+# This script keeps the newest N (default 2) per skill and deletes the rest.
+#
+# Usage:
+#   zcleanup-backups              # keep last 2 per skill
+#   zcleanup-backups 5            # keep last 5
+#   zcleanup-backups 0            # delete ALL backups (use with caution)
+#   USER_SKILLS_DIR=/tmp/x zcleanup-backups   # override target
+
+set -euo pipefail
+
+KEEP="${1:-2}"
+USER_SKILLS_DIR="${USER_SKILLS_DIR:-/home/user_skills}"
+
+if [ ! -d "$USER_SKILLS_DIR" ]; then
+  echo "no $USER_SKILLS_DIR — nothing to clean"
+  exit 0
+fi
+
+echo "=== backup cleanup: keep last $KEEP per skill in $USER_SKILLS_DIR ==="
+
+# Group backups by skill name (strip the .pre-* suffix)
+declare -A counts
+DELETED=0
+KEPT=0
+
+for backup in "$USER_SKILLS_DIR"/*.pre-update-backup-* \
+               "$USER_SKILLS_DIR"/*.pre-export-* \
+               "$USER_SKILLS_DIR"/*.pre-round-* \
+               "$USER_SKILLS_DIR"/*.pre-rollback-* \
+               "$USER_SKILLS_DIR"/*.pre-update-backup-*; do
+  [ -d "$backup" ] || continue
+  # Extract skill name (everything before .pre-)
+  skill=$(basename "$backup" | sed 's/\.pre-.*//')
+  counts["$skill"]=$(( ${counts["$skill"]:-0} + 1 ))
+done
+
+# For each skill, sort backups by mtime (newest first), keep top N, delete rest
+for skill in "${!counts[@]}"; do
+  total=${counts[$skill]}
+  echo "  $skill: $total backup(s) found"
+  
+  # List backups for this skill, newest first
+  backups=$(ls -dt "$USER_SKILLS_DIR/${skill}.pre-"* 2>/dev/null)
+  
+  n=0
+  while IFS= read -r backup; do
+    [ -z "$backup" ] && continue
+    n=$((n + 1))
+    if [ "$n" -le "$KEEP" ]; then
+      echo "    keep: $(basename "$backup")"
+      KEPT=$((KEPT + 1))
+    else
+      rm -rf "$backup"
+      echo "    delete: $(basename "$backup")"
+      DELETED=$((DELETED + 1))
+    fi
+  done <<< "$backups"
+done
+
+echo
+echo "=== done: kept $KEPT, deleted $DELETED ==="
