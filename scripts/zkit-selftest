@@ -14,7 +14,7 @@
 # Usage:
 #   zkit-selftest                     # creates a random temp repo, tests, deletes
 #   zkit-selftest --keep              # don't delete the temp repo (for inspection)
-#   zkit-selftest --repo zk-selftest  # use a specific repo name (must not exist)
+#   zkit-selftest --repo ${PREFIX}-selftest  # use a specific repo name (must not exist)
 #
 # Exit code 0 = all checks passed. Non-zero = at least one failure (see output).
 #
@@ -24,7 +24,7 @@ set -euo pipefail
 
 # Parse args
 KEEP=0
-REPO_NAME="zk-selftest-$(date +%s)"
+REPO_NAME="${PREFIX}-selftest-$(date +%s)"
 GH_PAT="${GH_PAT:-}"
 KIT_OVERRIDE=""
 while [ $# -gt 0 ]; do
@@ -59,15 +59,15 @@ done
 # ─── Pre-flight ────────────────────────────────────────────────────────────────
 # R2 #3 fix: auto-resolve GH_PAT from Doppler if not set
 if [ -z "${GH_PAT:-}" ]; then
-  if [ -f /home/user_skills/zk-doppler.env ]; then
-    set -a; source /home/user_skills/zk-doppler.env 2>/dev/null; set +a
+  if [ -f /home/user_skills/${PREFIX}-doppler.env ]; then
+    set -a; source /home/user_skills/${PREFIX}-doppler.env 2>/dev/null; set +a
     if [ -n "${DOPPLER_PT:-}" ] && [ -n "${DOPPLER_PROJECT:-}" ] && [ -n "${DOPPLER_CONFIG:-}" ]; then
       GH_PAT=$(curl -sS -H "Authorization: Bearer $DOPPLER_PT" \
         "https://api.doppler.com/v3/configs/config/secrets?project=$DOPPLER_PROJECT&config=$DOPPLER_CONFIG" \
         | jq -r '.secrets.GH_PAT.computed // empty')
       [ -n "$GH_PAT" ] && echo "[info] auto-resolved GH_PAT from Doppler (length ${#GH_PAT})"
     else
-      echo "[fail] DOPPLER_PROJECT or DOPPLER_CONFIG not set in /home/user_skills/zk-doppler.env"
+      echo "[fail] DOPPLER_PROJECT or DOPPLER_CONFIG not set in /home/user_skills/${PREFIX}-doppler.env"
       echo "       set them to your Doppler project + config, then re-run"
       exit 1
     fi
@@ -75,7 +75,7 @@ if [ -z "${GH_PAT:-}" ]; then
 fi
 if [ -z "${GH_PAT:-}" ]; then
   echo "[fail] GH_PAT env var not set and couldn't auto-resolve from Doppler." >&2
-  echo "       set GH_PAT manually, or ensure /home/user_skills/zk-doppler.env exists" >&2
+  echo "       set GH_PAT manually, or ensure /home/user_skills/${PREFIX}-doppler.env exists" >&2
   exit 1
 fi
 
@@ -170,11 +170,11 @@ echo "  ✅ zsave succeeded"
 # ─── Step 3: verify credential file (audit F16) ───────────────────────────────
 echo
 echo "--- Step 3: verify credential file (audit F16) ---"
-if [ ! -s "$SYNC/zk-remote.url" ]; then
-  echo "  [fail] $SYNC/zk-remote.url missing or empty"
+if [ ! -s "$SYNC/${PREFIX}-remote.url" ]; then
+  echo "  [fail] $SYNC/${PREFIX}-remote.url missing or empty"
   exit 1
 fi
-CRED_URL="$(cat "$SYNC/zk-remote.url")"
+CRED_URL="$(cat "$SYNC/${PREFIX}-remote.url")"
 EXPECTED_URL="$(git -C "$PROJ" remote get-url origin)"
 if [ "$CRED_URL" = "$EXPECTED_URL" ]; then
   echo "  ✅ credential file content matches origin URL (length ${#CRED_URL})"
@@ -194,7 +194,7 @@ cd "$PROJ"
 git init -q -b main
 git config user.email "zkit-selftest@super-z.local"
 git config user.name "zkit-selftest"
-RECOVERED_URL="$(cat "$SYNC/zk-remote.url")"
+RECOVERED_URL="$(cat "$SYNC/${PREFIX}-remote.url")"
 git remote add origin "$RECOVERED_URL"
 git fetch -q origin
 git reset --hard origin/main 2>&1 | sed 's/^/    /'

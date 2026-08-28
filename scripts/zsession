@@ -2,20 +2,25 @@
 # zsession — Z-container situation report at session start (read-only).
 # (kit v2.3.2)
 # Makes no persistent changes: mount checks create+remove one unique
-# .zk-rw-$$ probe file; git commands only read (status may refresh the
+# .${PREFIX}-rw-$$ probe file; git commands only read (status may refresh the
 # index stat-cache, which is cosmetic).
 #
 # usage: zsession
 # env:  ZK_PROJ, ZK_SYNC — pointing them at scratch dirs gives a full
 #       scratch-project report (live-project checks are skipped cleanly).
 set -uo pipefail
+
+# ZK_PREFIX must be set — no default. Set it in /home/z/my-project/.env during
+# initial setup (e.g. ZK_PREFIX=myproject). All kit files use this prefix to
+# avoid collision with other projects in /home/user_skills/ and /home/sync/.
+PREFIX="${ZK_PREFIX:?ZK_PREFIX not set — see SKILL.md "First-time setup". Add ZK_PREFIX=<your-project> to /home/z/my-project/.env}"
 # token masker for anything echoed into transcripts (PAT-bearing URLs,
 # branch names, commit subjects, state-file values)
 mask() { sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g'; }
 
 PROJ="${ZK_PROJ:-/home/z/my-project}"
 SYNC="${ZK_SYNC:-/home/sync}"
-STATE="$SYNC/zk-state.env"
+STATE="$SYNC/${PREFIX}-state.env"
 LIVE=0; [ "$PROJ" = "/home/z/my-project" ] && LIVE=1
 line() { printf '\n---------------- %s ----------------\n' "$1"; }
 
@@ -26,7 +31,7 @@ UP="$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)"
 echo "booted: $((UP / 60)) min ago (a container recycle resets this)"
 echo "hostname: $(hostname)"
 for m in "$SYNC" /tmp/my-project "$PROJ/upload"; do
-  P=".zk-rw-$$"
+  P=".${PREFIX}-rw-$$"
   if [ -d "$m" ] && touch "$m/$P" 2>/dev/null; then
     rm -f "$m/$P"; echo "$m: writable"
   else
@@ -96,8 +101,8 @@ if [ -e "$PROJ/.git" ]; then
   # an agent doing fresh-chat recovery has no way to know whether the URL is
   # the RIGHT one for this session. Showing the masked URL lets the agent
   # immediately spot a stale credential file (audit F16/F17 root cause).
-  CFS="$SYNC/zk-remote.url"
-  [ "$LIVE" = 1 ] && CFS="$CFS /home/user_skills/zk-remote.url"
+  CFS="$SYNC/${PREFIX}-remote.url"
+  [ "$LIVE" = 1 ] && CFS="$CFS /home/user_skills/${PREFIX}-remote.url"
   for cf in $CFS; do
     if [ -s "$cf" ]; then
       CF_URL="$(cat "$cf" 2>/dev/null || true)"
@@ -187,7 +192,7 @@ if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origi
     [ -f "$p/scripts/install.sh" ] && { KITSRC="$p"; break; }
   done
   CRED=""
-  for cf in /home/user_skills/zk-remote.url "$SYNC/zk-remote.url"; do
+  for cf in /home/user_skills/${PREFIX}-remote.url "$SYNC/${PREFIX}-remote.url"; do
     [ -s "$cf" ] && { CRED="$cf"; break; }
   done
   echo "COLD START detected (no remote, no zsave state). Exact sequence:"
@@ -217,8 +222,8 @@ if [ ! -e "$PROJ/.git" ]; then
 fi
 if [ "$COLD" != 1 ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
   CRED=""
-  CFS="$SYNC/zk-remote.url"
-  [ "$LIVE" = 1 ] && CFS="$CFS /home/user_skills/zk-remote.url"
+  CFS="$SYNC/${PREFIX}-remote.url"
+  [ "$LIVE" = 1 ] && CFS="$CFS /home/user_skills/${PREFIX}-remote.url"
   for cf in $CFS; do
     [ -s "$cf" ] && { CRED="$cf"; break; }
   done
@@ -256,4 +261,4 @@ if [ "$n" -eq 0 ]; then
     echo "none — everything looks healthy. Continue work; zsave at next milestone."
   fi
 fi
-echo "(report only — no persistent changes; mount checks use a unique .zk-rw-$$ probe file)"
+echo "(report only — no persistent changes; mount checks use a unique .${PREFIX}-rw-$$ probe file)"

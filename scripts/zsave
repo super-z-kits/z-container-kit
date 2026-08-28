@@ -7,15 +7,15 @@
 #   1. commit everything (git add -A, including .env — git IS the disk here)
 #   2. push to origin (if configured; failure is a warning, not fatal;
 #      embedded PATs are masked before any stderr is echoed)
-#   2b. after a successful push: refresh zk-remote.url credential files
+#   2b. after a successful push: refresh ${PREFIX}-remote.url credential files
 #       ($ZK_SYNC + /home/user_skills) so a FRESH chat can re-add origin
 #       even when per-chat /home/sync starts empty
-#   3. snapshot to $ZK_SYNC/zk-snapshots/ (keep last N)
+#   3. snapshot to $ZK_SYNC/${PREFIX}-snapshots/ (keep last N)
 #      - excluded: node_modules/.next/.turbo (ANY depth), upload/, dev.log,
 #        OFFICIAL skills (boot re-extracts them); CUSTOM skills are kept
 #      - built on local /tmp then copied out once (fast, atomic-ish)
 #   4. refresh $ZK_SYNC/repo.tar (the boot-restore artifact) atomically
-#   5. write $ZK_SYNC/zk-state.env atomically (parsed with sed, never sourced)
+#   5. write $ZK_SYNC/${PREFIX}-state.env atomically (parsed with sed, never sourced)
 #
 # Concurrency: per-container flock on /tmp/.zsave.lock. Only ONE zsave runs at
 # a time — sub-agents must NOT run zsave; the coordinating agent owns saves.
@@ -27,9 +27,14 @@
 #         repo.tar failed; 75 if another zsave holds the lock.
 set -uo pipefail
 
+# ZK_PREFIX must be set — no default. Set it in /home/z/my-project/.env during
+# initial setup (e.g. ZK_PREFIX=myproject). All kit files use this prefix to
+# avoid collision with other projects in /home/user_skills/ and /home/sync/.
+PREFIX="${ZK_PREFIX:?ZK_PREFIX not set — see SKILL.md "First-time setup". Add ZK_PREFIX=<your-project> to /home/z/my-project/.env}"
+
 PROJ="${ZK_PROJ:-/home/z/my-project}"
 SYNC="${ZK_SYNC:-/home/sync}"
-SNAPDIR="$SYNC/zk-snapshots"
+SNAPDIR="$SYNC/${PREFIX}-snapshots"
 KEEP="${ZK_KEEP:-5}"
 case "$KEEP" in ''|*[!0-9]*) KEEP=5 ;; esac
 [ "$KEEP" -ge 1 ] 2>/dev/null || KEEP=5
@@ -157,7 +162,7 @@ elif git remote get-url origin >/dev/null 2>&1; then
 else
   echo "[note] no origin remote — snapshot-only."
   echo "       add one: git remote add origin https://<PAT>@github.com/<user>/<repo>.git"
-  echo "       (a surviving zk-remote.url credential file may hold it — see zsession)"
+  echo "       (a surviving ${PREFIX}-remote.url credential file may hold it — see zsession)"
 fi
 
 # --- 2b. credential persistence (best-effort, never fatal) --------------------
@@ -197,11 +202,11 @@ if [ "$PUSHED" = "yes" ]; then
         FAIL=1
       fi
     }
-    write_cred "$SYNC/zk-remote.url"
+    write_cred "$SYNC/${PREFIX}-remote.url"
     # the cross-chat copy only for the live project + real sync dir
     # (scratch ZK_PROJ/ZK_SYNC test runs must not touch /home/user_skills)
     if [ "$PROJ" = "/home/z/my-project" ] && [ "$SYNC" = "/home/sync" ]; then
-      write_cred /home/user_skills/zk-remote.url
+      write_cred /home/user_skills/${PREFIX}-remote.url
     fi
   fi
 fi
@@ -275,7 +280,7 @@ if mkdir -p "$SNAPDIR" 2>/dev/null; then
   rm -f "$LT" "$TERR"
   # prune: keep newest $KEEP per type; never delete the snapshot just made
   for pat in proj gitdir; do
-    PL="/tmp/.zk-prune-$$.$pat"
+    PL="/tmp/.${PREFIX}-prune-$$.$pat"
     ls -1 "$SNAPDIR"/$pat-*.tar 2>/dev/null | sort > "$PL"
     n_del=$(( $(wc -l < "$PL") - KEEP ))
     if [ "$n_del" -gt 0 ]; then
@@ -295,12 +300,12 @@ if [ "$HAVE_HEAD" = 1 ]; then
   MSG="$(git log -1 --format=%s 2>/dev/null | tr -d "'\"\$\`;<>()|&" | cut -c1-80 | mask)"
 fi
 if { printf "last_commit='%s'\nlast_msg='%s'\nbranch='%s'\nts='%s'\npushed='%s'\n" \
-     "$LAST" "$MSG" "$(printf '%s' "$BR" | mask)" "$TS" "$PUSHED" > "$SYNC/.zk-state.$$.tmp"; } 2>/dev/null \
-   && mv -f "$SYNC/.zk-state.$$.tmp" "$SYNC/zk-state.env" 2>/dev/null; then
-  echo "[ok] state: $SYNC/zk-state.env"
+     "$LAST" "$MSG" "$(printf '%s' "$BR" | mask)" "$TS" "$PUSHED" > "$SYNC/.${PREFIX}-state.$$.tmp"; } 2>/dev/null \
+   && mv -f "$SYNC/.${PREFIX}-state.$$.tmp" "$SYNC/${PREFIX}-state.env" 2>/dev/null; then
+  echo "[ok] state: $SYNC/${PREFIX}-state.env"
 else
-  echo "[warn] could not write zk-state.env" >&2
-  rm -f "$SYNC/.zk-state.$$.tmp"
+  echo "[warn] could not write ${PREFIX}-state.env" >&2
+  rm -f "$SYNC/.${PREFIX}-state.$$.tmp"
 fi
 
 if [ "$FAIL" = 1 ]; then

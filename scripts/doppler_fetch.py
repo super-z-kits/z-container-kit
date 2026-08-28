@@ -2,7 +2,7 @@
 """doppler_fetch.py — verify Doppler PT and pull secrets from the vault.
 
 Follows secrets-vault-kit conventions:
-- PT sourced from /home/user_skills/zk-doppler.env (0600, outside git tree)
+- PT sourced from /home/user_skills/{}-doppler.env (0600, outside git tree)
 - Secrets JSON written to /tmp/my-project/doppler-secrets.json (0600) — never into git
 - stdout shows only secret NAMES + value LENGTHS, never values
 """
@@ -12,7 +12,7 @@ import stat
 import sys
 import urllib.request
 
-ENV_FILE = "/home/user_skills/zk-doppler.env"
+import os; PREFIX = os.environ.get("ZK_PREFIX"); ENV_FILE = f"/home/user_skills/{PREFIX}-doppler.env" if PREFIX else None
 OUT_JSON = "/tmp/my-project/doppler-secrets.json"
 API = "https://api.doppler.com/v3"
 

@@ -37,7 +37,7 @@ chat), reinstall from any copy: `bash <kit>/scripts/install.sh`.
 
 1. **Stay on `main` in `/home/z/my-project` — the watchdog silently reverts your files.** Before every toolcall, the platform runs `git switch main`. If you're on another branch with a clean tree, your working files silently revert to main on the next toolcall — you won't know until you try to find your work. **Never `git checkout <branch>` inside `/home/z/my-project`.** For branch work, use a worktree: `git -C /home/z/my-project worktree add /tmp/my-project/worktrees/<name> -b feature/<x>`. For PRs, push without checkout: `git push origin main:feature/<x>`.
 
-2. **Push after every milestone — GIT IS THE DISK.** There is no durable local disk; github is the only cross-chat persistence. Run `bash /home/z/my-project/scripts/zsave "msg"` after every meaningful change, before risky operations, and every ~10 toolcalls. Pushed = saved; unpushed = at risk.
+2. **`zsave` after every milestone — GIT IS THE DISK, but push is only ONE of 4 backup layers.** `zsave` does all 4 in one command: (1) commit to local git, (2) push to GitHub (the only cross-chat persistence), (3) snapshot tar to `/home/sync/${ZK_PREFIX}-snapshots/` (per-chat, survives recycle + force-kill), (4) refresh `/home/sync/repo.tar` (the boot-restore artifact — a force-killed container comes back at your latest zsave). It also refreshes `${ZK_PREFIX}-remote.url` in `/home/sync/` + `/home/user_skills/` (cross-chat remote recovery). **Pushed = saved across all layers; unpushed = at risk in ALL layers.** Run after every meaningful change, before risky operations, and every ~10 toolcalls.
 
 3. **Never force push.** Local state can be faulty (watchdog reverts, workspace wipes, wrong work dir). `git push --force` overwrites the only copy with your possibly-broken local — the most deadly combination. If push is rejected, `git pull --rebase origin main` and re-push. Never `--force` without explicit user permission.
 
@@ -45,11 +45,23 @@ chat), reinstall from any copy: `bash <kit>/scripts/install.sh`.
 
 5. **Delegate to sub-agents to avoid excessive bash calls.** Rapid toolcall loops risk the 403 lockout (see law 6). Sub-agents get independent tool sessions — delegate risky probes.
 
+## First-time setup: set ZK_PREFIX (no default — scripts fail loudly if missing)
+
+All kit credential files, snapshots, and state files are named with a prefix to avoid collision with other projects in `/home/user_skills/` and `/home/sync/`. The prefix is NOT hardcoded — you MUST set it during first-time setup:
+
+```bash
+# Add to /home/z/my-project/.env (committed to git — law 9):
+echo 'ZK_PREFIX=<your-project-name>' >> /home/z/my-project/.env
+# e.g. ZK_PREFIX=myapp
+```
+
+This creates files like `/home/user_skills/myapp-doppler.env`, `/home/sync/myapp-snapshots/`, etc. If `ZK_PREFIX` is not set, every kit script will fail with: `ZK_PREFIX not set — see SKILL.md "First-time setup"`.
+
 **⚠️ Parallel sessions (R10-13):** `/home/user_skills/` is **per-user, shared
 across concurrent chats**. The platform runs 2-3 concurrent sessions under the
 same account — they all see the same `/home/user_skills/`. This is a boon
 (skills installed once are available everywhere) but can cause surprises:
-parallel sessions can silently overwrite each other's `zk-doppler.env`,
+parallel sessions can silently overwrite each other's `${ZK_PREFIX}-doppler.env`,
 cause push divergence on the backup repo, or write phantom files. See
 `kb/parallel-sessions.md` for the full hazard analysis + mitigations.
 
@@ -94,7 +106,7 @@ PAT is typed exactly once (the remote-add line). The kit repo is public — clon
 needs no PAT. Two alternatives for the remote-add step:
 
 - **B1 — credential file survived** (most common in Path B): replace the
-  remote-add with `git remote add origin "$(cat /home/user_skills/zk-remote.url)"`.
+  remote-add with `git remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`.
   Still run the sanity-check log line — a stale credential file (audit F16)
   can silently point at a different repo.
 - **B2 — no PAT, no credential file, but Doppler vault has GH_PAT** (Path C,
@@ -123,9 +135,9 @@ bash /home/z/my-project/scripts/zsave "milestone message"
 ```
 
 Does, in order: maintain `.git/info/exclude` → `git add -A` + commit (incl. `.env`
-— law 9) → push `origin HEAD:<branch>` (refreshes `zk-remote.url` credential
-files) → tar snapshot to `/home/sync/zk-snapshots/` (keep 5) → refresh
-`/home/sync/repo.tar` (the boot-restore artifact) → write `zk-state.env`
+— law 9) → push `origin HEAD:<branch>` (refreshes `${ZK_PREFIX}-remote.url` credential
+files) → tar snapshot to `/home/sync/${ZK_PREFIX}-snapshots/` (keep 5) → refresh
+`/home/sync/repo.tar` (the boot-restore artifact) → write `${ZK_PREFIX}-state.env`
 (recycle detector). Each step degrades gracefully; nonzero exit = commit/snapshot/
 repo.tar failed (push failure is a warning). Full 6-step internals with exclude
 rules: `kb/zsave-internals.md`.
@@ -277,7 +289,7 @@ protect the main session.
   `git remote add origin https://<PAT>@github.com/<user>/<repo>.git`.
 - The kit never embeds tokens — project- and PAT-agnostic by construction [V].
   A PAT persists ONLY in container-local places: the origin URL in `.git/config`
-  (repo.tar boot-restore brings it back), the `zk-remote.url` credential files
+  (repo.tar boot-restore brings it back), the `${ZK_PREFIX}-remote.url` credential files
   (zsave-maintained: `/home/sync/` + `/home/user_skills/`), and tar snapshots
   of `.git`. NEVER in the GitHub repo, never in any kit file. Different PAT:
   `git remote set-url origin https://<PAT>@github.com/<u>/<r>.git`, then `zsave`.
@@ -350,7 +362,7 @@ Kit helpers in `scripts/`:
 
 **Python (complementary):**
 - `doppler_fetch.py` — urllib version of `zdoppler-smoke`; stages secrets to `/tmp/my-project/doppler-secrets.json`
-- `verify_access.py` — urllib access verifier for GitHub / Cloudflare / Supabase (Supabase WAF needs `User-Agent: zk-verify`)
+- `verify_access.py` — urllib access verifier for GitHub / Cloudflare / Supabase (Supabase WAF needs `User-Agent: ${ZK_PREFIX}-verify`)
 
 Use bash for quick one-shots; Python for multi-call flows that stage secrets
 across calls. Audit-callout detail per helper (F6, F8, F10, M7, M3, M4):
@@ -363,7 +375,7 @@ so the seed is invisible in the canonical verification output. You MUST sweep
 all configs (not just the handover config) to detect it:
 
 ```bash
-set -a; source /home/user_skills/zk-doppler.env; set +a
+set -a; source /home/user_skills/${ZK_PREFIX}-doppler.env; set +a
 # List all configs, then check each for DOPPLER_TOKEN_SEED
 for cfg in $(curl -sS -H "Authorization: Bearer $DOPPLER_PT" \
   "https://api.doppler.com/v3/configs?project=$DOPPLER_PROJECT" \

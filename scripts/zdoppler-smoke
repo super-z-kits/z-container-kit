@@ -2,7 +2,7 @@
 # zdoppler-smoke — one-shot verification of the Doppler onboarding (audit F8)
 #
 # Problem: after the user pastes a Doppler handover (PT, project, config)
-# and the agent writes /home/user_skills/zk-doppler.env, the agent has to
+# and the agent writes /home/user_skills/${PREFIX}-doppler.env, the agent has to
 # invent its own verification boilerplate (fetch secrets, jq the response,
 # print lengths). Quality varies; some agents print values, some fail
 # silently if jq is missing.
@@ -12,14 +12,14 @@
 # non-DOPPLER_ key, exits 0 if healthy.
 #
 # Usage:
-#   zdoppler-smoke                    # uses /home/user_skills/zk-doppler.env
+#   zdoppler-smoke                    # uses /home/user_skills/${PREFIX}-doppler.env
 #   zdoppler-smoke --config stg       # override config
 #   zdoppler-smoke --project other   # override project
 #   zdoppler-smoke --show-values     # ALSO print secret values (DANGER: leaks to transcript)
 
 set -euo pipefail
 
-ENV_FILE="${ZK_DOPPLER_ENV:-/home/user_skills/zk-doppler.env}"
+ENV_FILE="${ZK_DOPPLER_ENV:-/home/user_skills/${PREFIX}-doppler.env}"
 
 # Parse args
 OVR_PROJECT=""
@@ -37,7 +37,7 @@ zdoppler-smoke — verify Doppler onboarding (audit F8)
 
 Usage: zdoppler-smoke [--project P] [--config C] [--show-values] [--env-file PATH]
 
-Default env file: /home/user_skills/zk-doppler.env
+Default env file: /home/user_skills/${PREFIX}-doppler.env
 --show-values: ALSO print secret values (DANGEROUS: leaks to transcript; only use
                when intentionally debugging, and never in shared transcripts)
 
@@ -76,7 +76,7 @@ echo "  config:     $DOPPLER_CONFIG"
 echo "  PT length:  ${#DOPPLER_PT}"
 
 # R10-1 fix: lint for duplicate keys in the env file.
-# Parallel sessions writing to the same zk-doppler.env can produce duplicate
+# Parallel sessions writing to the same ${PREFIX}-doppler.env can produce duplicate
 # lines (e.g. two DOPPLER_PT_STORED_AT entries). Bash `source` silently takes
 # the last — but duplicates are malformed and should be flagged.
 if [ -f "$ENV_FILE" ]; then

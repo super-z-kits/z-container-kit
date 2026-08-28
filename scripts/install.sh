@@ -123,7 +123,7 @@ copy_into /home/user_skills/z-container-kit
 #    /tmp from the just-installed copy, moved in atomically. Kit files carry
 #    no tokens by construction — the zip is safe to hand to any session.
 if [ -d /home/user_skills/z-container-kit ]; then
-  ZT="/tmp/.zk-zipstage-$$"
+  ZT="/tmp/.${PREFIX}-zipstage-$$"
   rm -rf "$ZT"; mkdir -p "$ZT"
   if cp -r /home/user_skills/z-container-kit "$ZT/z-container" 2>/dev/null; then
     # belt-and-braces: never ship VCS metadata in the portable zip
