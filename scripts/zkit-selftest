@@ -61,11 +61,15 @@ done
 if [ -z "${GH_PAT:-}" ]; then
   if [ -f /home/user_skills/zk-doppler.env ]; then
     set -a; source /home/user_skills/zk-doppler.env 2>/dev/null; set +a
-    if [ -n "${DOPPLER_PT:-}" ]; then
+    if [ -n "${DOPPLER_PT:-}" ] && [ -n "${DOPPLER_PROJECT:-}" ] && [ -n "${DOPPLER_CONFIG:-}" ]; then
       GH_PAT=$(curl -sS -H "Authorization: Bearer $DOPPLER_PT" \
-        "https://api.doppler.com/v3/configs/config/secrets?project=${DOPPLER_PROJECT:-agent-bootstrap}&config=${DOPPLER_CONFIG:-prd}" \
+        "https://api.doppler.com/v3/configs/config/secrets?project=$DOPPLER_PROJECT&config=$DOPPLER_CONFIG" \
         | jq -r '.secrets.GH_PAT.computed // empty')
       [ -n "$GH_PAT" ] && echo "[info] auto-resolved GH_PAT from Doppler (length ${#GH_PAT})"
+    else
+      echo "[fail] DOPPLER_PROJECT or DOPPLER_CONFIG not set in /home/user_skills/zk-doppler.env"
+      echo "       set them to your Doppler project + config, then re-run"
+      exit 1
     fi
   fi
 fi

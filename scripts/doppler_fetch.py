@@ -41,8 +41,14 @@ def api_get(url, token):
 def main():
     env = load_env(ENV_FILE)
     pt = env.get("DOPPLER_PT", "")
-    project = env.get("DOPPLER_PROJECT", "agent-bootstrap")
-    config = sys.argv[1] if len(sys.argv) > 1 else env.get("DOPPLER_CONFIG", "dev")
+    project = env.get("DOPPLER_PROJECT")
+    if not project:
+        print("FATAL: DOPPLER_PROJECT not set in env file")
+        sys.exit(1)
+    config = sys.argv[1] if len(sys.argv) > 1 else env.get("DOPPLER_CONFIG")
+    if not config:
+        print("FATAL: DOPPLER_CONFIG not set in env file")
+        sys.exit(1)
     if not pt.startswith("dp."):
         print("FATAL: DOPPLER_PT missing/invalid format in env file")
         sys.exit(1)
