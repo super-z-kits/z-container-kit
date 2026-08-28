@@ -35,11 +35,15 @@ chat), reinstall from any copy: `bash <kit>/scripts/install.sh`.
 
 ## Rules you never break
 
-1. **Push your work often — GIT IS THE DISK.** There is no durable local disk; github is the only cross-chat persistence. Pushed = saved; unpushed = at risk.
-2. **Never force push to remote.** Local state can be faulty (watchdog reverts, workspace wipes, wrong work dir). `git push --force` overwrites the only copy with your possibly-broken local — the most deadly combination. Slow down and fix merge conflicts properly, or stop and ask the user for explicit permission. The most common cause of divergence that tempts force-push is your own local workspace issue, not a real remote conflict.
-3. **Set git identity to your real GitHub account.** `git config user.name "<GitHub username>"` and `git config user.email "<id>+<username>@users.noreply.github.com"` — the exact noreply email from GitHub settings, never an invented ID. Vercel blocks deploys authored by `Z User <z@container>` or any email not on your GitHub account.
-4. **Delegate to sub-agents to avoid excessive bash calls.** Rapid toolcall loops risk the 403 lockout (see law 6). Spawn sub-agents for repetitive probes.
-5. **The watchdog force-checkouts `/home/z/my-project` to main every ~20s**, reverting any file that differs between branches. Solution: work in a clone outside the watched path (e.g. `/tmp/my-project/worktrees/<name>`), or stay on main and use a separate fork repo if you truly need branch isolation.
+1. **Stay on `main` in `/home/z/my-project` — the watchdog silently reverts your files.** Before every toolcall, the platform runs `git switch main`. If you're on another branch with a clean tree, your working files silently revert to main on the next toolcall — you won't know until you try to find your work. **Never `git checkout <branch>` inside `/home/z/my-project`.** For branch work, use a worktree: `git -C /home/z/my-project worktree add /tmp/my-project/worktrees/<name> -b feature/<x>`. For PRs, push without checkout: `git push origin main:feature/<x>`.
+
+2. **Push after every milestone — GIT IS THE DISK.** There is no durable local disk; github is the only cross-chat persistence. Run `bash /home/z/my-project/scripts/zsave "msg"` after every meaningful change, before risky operations, and every ~10 toolcalls. Pushed = saved; unpushed = at risk.
+
+3. **Never force push.** Local state can be faulty (watchdog reverts, workspace wipes, wrong work dir). `git push --force` overwrites the only copy with your possibly-broken local — the most deadly combination. If push is rejected, `git pull --rebase origin main` and re-push. Never `--force` without explicit user permission.
+
+4. **Set git identity before any commit.** Boot default is `Z User <z@container>` — Vercel blocks deploys from this identity. `git config user.name "<GitHub username>"` and `git config user.email "<id>+<username>@users.noreply.github.com"` (exact noreply email from GitHub settings). zsession detects this and prints the fix.
+
+5. **Delegate to sub-agents to avoid excessive bash calls.** Rapid toolcall loops risk the 403 lockout (see law 6). Sub-agents get independent tool sessions — delegate risky probes.
 
 **⚠️ Parallel sessions (R10-13):** `/home/user_skills/` is **per-user, shared
 across concurrent chats**. The platform runs 2-3 concurrent sessions under the
