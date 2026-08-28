@@ -52,10 +52,10 @@ if [ ! -d "$USER_SKILLS_DIR" ]; then
 fi
 
 # Count backups first (for confirmation)
-BACKUP_COUNT=$(ls -d "$USER_SKILLS_DIR"/*.pre-update-backup-* \
+BACKUP_COUNT=$( { ls -d "$USER_SKILLS_DIR"/*.pre-update-backup-* \
                   "$USER_SKILLS_DIR"/*.pre-export-* \
                   "$USER_SKILLS_DIR"/*.pre-round-* \
-                  "$USER_SKILLS_DIR"/*.pre-rollback-* 2>/dev/null | wc -l)
+                  "$USER_SKILLS_DIR"/*.pre-rollback-* 2>/dev/null || true; } | wc -l)
 
 if [ "$BACKUP_COUNT" -eq 0 ]; then
   echo "no backup dirs found in $USER_SKILLS_DIR"
@@ -83,8 +83,7 @@ KEPT=0
 for backup in "$USER_SKILLS_DIR"/*.pre-update-backup-* \
                "$USER_SKILLS_DIR"/*.pre-export-* \
                "$USER_SKILLS_DIR"/*.pre-round-* \
-               "$USER_SKILLS_DIR"/*.pre-rollback-* \
-               "$USER_SKILLS_DIR"/*.pre-update-backup-*; do
+               "$USER_SKILLS_DIR"/*.pre-rollback-*; do
   [ -d "$backup" ] || continue
   # Extract skill name (everything before .pre-)
   skill=$(basename "$backup" | sed 's/\.pre-.*//')

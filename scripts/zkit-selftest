@@ -57,12 +57,21 @@ EOF
 done
 
 # ─── Pre-flight ────────────────────────────────────────────────────────────────
-if [ -z "$GH_PAT" ]; then
-  echo "[fail] GH_PAT env var not set." >&2
-  echo "       fetch from Doppler first:" >&2
-  echo "         export GH_PAT=\$(curl -sH \"Authorization: Bearer \$DOPPLER_PT\" \\" >&2
-  echo "           \"https://api.doppler.com/v3/configs/config/secrets?project=\$DOPPLER_PROJECT&config=\$DOPPLER_CONFIG\" \\" >&2
-  echo "           | jq -r '.secrets.GH_PAT.computed')" >&2
+# R2 #3 fix: auto-resolve GH_PAT from Doppler if not set
+if [ -z "${GH_PAT:-}" ]; then
+  if [ -f /home/user_skills/zk-doppler.env ]; then
+    set -a; source /home/user_skills/zk-doppler.env 2>/dev/null; set +a
+    if [ -n "${DOPPLER_PT:-}" ]; then
+      GH_PAT=$(curl -sS -H "Authorization: Bearer $DOPPLER_PT" \
+        "https://api.doppler.com/v3/configs/config/secrets?project=${DOPPLER_PROJECT:-agent-bootstrap}&config=${DOPPLER_CONFIG:-prd}" \
+        | jq -r '.secrets.GH_PAT.computed // empty')
+      [ -n "$GH_PAT" ] && echo "[info] auto-resolved GH_PAT from Doppler (length ${#GH_PAT})"
+    fi
+  fi
+fi
+if [ -z "${GH_PAT:-}" ]; then
+  echo "[fail] GH_PAT env var not set and couldn't auto-resolve from Doppler." >&2
+  echo "       set GH_PAT manually, or ensure /home/user_skills/zk-doppler.env exists" >&2
   exit 1
 fi
 
