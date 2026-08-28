@@ -101,16 +101,39 @@ EOF
 fi
 
 # --- 1. commit ----------------------------------------------------------------
+# F19: if the user passed an explicit message AND the tree is clean, create an
+# empty commit so the milestone is recorded in git history (otherwise the
+# message argument was silently discarded).
+# m5 (audit): guardrail — warn (don't block) when staging files whose basename
+# matches secret-sounding patterns. Catches the ".secrets/" near-miss where an
+# agent parks downloaded SKILL.mds in a directory named `.secrets/` and almost
+# commits them. Too many false positives to block, but a warning is cheap.
+ZS_MSG="${1:-}"
 if [ -n "$(git status --porcelain)" ]; then
   git add -A
-  if git commit -q -m "${1:-"zsave $TS"}"; then
+  # m5: scan staged files for secret-sounding basenames
+  SECRET_HITS="$(git diff --cached --name-only --diff-filter=A 2>/dev/null | grep -iE '(^|/)(secret|token|key|credential|\.env)' || true)"
+  if [ -n "$SECRET_HITS" ]; then
+    echo "[warn] m5: staging files whose basename matches secret-sounding pattern:" >&2
+    printf '%s\n' "$SECRET_HITS" | sed 's/^/         /' >&2
+    echo "       if these are real secrets, DO NOT commit (rotate + add to .git/info/exclude);" >&2
+    echo "       if these are skill docs / examples (e.g. .secrets/SKILL.md), this is expected — proceed." >&2
+  fi
+  if git commit -q -m "${ZS_MSG:-"zsave $TS"}"; then
     echo "[ok] commit: $(git log --oneline -1 | mask)"
   else
     echo "[warn] commit failed — identity? stale .git/index.lock? (see SKILL.md 'Stuck repo states')" >&2
     FAIL=1
   fi
+elif [ -n "$ZS_MSG" ]; then
+  # tree clean but user supplied a message — record an empty commit
+  if git commit -q --allow-empty -m "$ZS_MSG"; then
+    echo "[ok] empty checkpoint commit: $(git log --oneline -1 | mask)"
+  else
+    echo "[note] could not create empty commit (message argument discarded)"
+  fi
 else
-  echo "[ok] tree clean — nothing to commit (message argument not used)"
+  echo "[ok] tree clean — nothing to commit (no message argument)"
 fi
 HAVE_HEAD=0; git rev-parse HEAD >/dev/null 2>&1 && HAVE_HEAD=1
 
@@ -142,15 +165,36 @@ fi
 # even if per-chat /home/sync is empty. Written ONLY after a successful push,
 # so the file always holds the URL that last worked. Lives OUTSIDE kit dirs so
 # install.sh's dir swap never deletes it. Contains the PAT: never print it.
+#
+# F16 (audit): the original `printf > file` pattern returned success even when
+# the bytes didn't persist (observed: PolarFS sync delay silently left the file
+# with a STALE URL, causing fresh-chat recovery to pull from the WRONG repo and
+# overwrite the working tree with unrelated content). The fix: re-read the file
+# after writing and WARN if the bytes don't match. Up to 3 retries with `sync`.
 if [ "$PUSHED" = "yes" ]; then
   URL="$(git remote get-url origin 2>/dev/null || true)"
   if [ -n "$URL" ]; then
     write_cred() {
-      if printf '%s\n' "$URL" > "$1" 2>/dev/null; then
-        chmod 600 "$1" 2>/dev/null
-        echo "[ok] credential file: $1 (fresh-chat remote recovery)"
+      local target="$1" attempts=0 actual=""
+      while [ $attempts -lt 3 ]; do
+        attempts=$((attempts + 1))
+        printf '%s\n' "$URL" > "$target" 2>/dev/null || continue
+        chmod 600 "$target" 2>/dev/null
+        sync "$target" 2>/dev/null   # flush FUSE cache (no-op on non-FUSE)
+        # VERIFY: read back and confirm the bytes actually persisted
+        actual="$(cat "$target" 2>/dev/null || true)"
+        [ "$actual" = "$URL" ] && break
+        sleep 0.1   # tiny pause before retry (PolarFS sync window)
+      done
+      if [ "$actual" = "$URL" ]; then
+        # F13: surface the file mode so reviewers can spot the ossfs 0777 quirk
+        local mode; mode="$(stat -c '%a' "$target" 2>/dev/null || echo '??')"
+        echo "[ok] credential file: $target (mode $mode, fresh-chat remote recovery)"
       else
-        echo "[note] could not write $1 (missing dir? fresh-chat recovery degraded)"
+        echo "[WARN] credential file $target write did NOT persist (got len=${#actual}, expected ${#URL})" >&2
+        echo "       manual recovery: bash -c 'printf \"%s\\n\" \"\$0\" > \"$target\"' \"\$URL\"" >&2
+        echo "       (the next zsave will retry; until then fresh-chat recovery may pull a stale URL)" >&2
+        FAIL=1
       fi
     }
     write_cred "$SYNC/zk-remote.url"
@@ -263,4 +307,11 @@ if [ "$FAIL" = 1 ]; then
   echo "== zsave FINISHED WITH FAILURES — see [warn] lines above ==" >&2
   exit 1
 fi
-echo "== done. next milestone -> zsave again =="
+# --- 6. worktree prune (F22) --------------------------------------------------
+# Stale worktree entries accumulate when worktrees are removed outside git's
+# knowledge (e.g. PolarFS dir vanishes on recycle). Pruning is cheap and safe.
+git worktree prune 2>/dev/null
+
+# m4 (audit): final summary line includes push status, so agents that `tail -1`
+# don't miss the push result buried ~10 lines up.
+echo "== done (pushed=$PUSHED, snapshot=$(test -f "$SNAPDIR"/proj-$TS.tar && echo yes || echo no), repo.tar=$(test -f "$SYNC/repo.tar" && echo refreshed || echo missing)). next milestone -> zsave again =="

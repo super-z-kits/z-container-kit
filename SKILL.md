@@ -18,6 +18,8 @@ description: >
 
 # Z-Container Survival Guide v2
 
+**Canonical raw URL (audit m1):** `https://raw.githubusercontent.com/super-z-kits/z-container-kit/main/SKILL.md` — fetch directly, no inference from GitHub-title shorthand.
+
 **Cold start TL;DR** (fresh chat, PAT + kit repo URL, nothing else): clone
 `https://github.com/super-z-kits/z-container-kit` to a scratch path, run its
 `scripts/install.sh`, wire your workspace remote (PAT typed once),
@@ -80,7 +82,11 @@ URL, nothing else; `/home/user_skills` empty):
 git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit   # any scratch path works
 bash /tmp/my-project/kit/scripts/install.sh    # helpers + kit copies everywhere
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git   # the repo backing THIS workspace
-git -C /home/z/my-project fetch && git -C /home/z/my-project reset --hard origin/main   # restore the workspace (empty remote? skip)
+git -C /home/z/my-project fetch origin                                   # fetch first (DO NOT reset --hard yet)
+# F18 (audit): verify the remote is the one you expect BEFORE destructive reset.
+git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK the commits
+# if the commits match your expectation, proceed; if they look like the WRONG repo's history, STOP and ask the user
+git -C /home/z/my-project reset --hard origin/main   # restore the workspace (empty remote? skip)
 bash /tmp/my-project/kit/scripts/install.sh    # normalize all copies post-restore (install strips any clone .git — copies stay plain dirs)
 bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
 ```
@@ -95,8 +101,16 @@ recover the remote — every successful `zsave` writes a `zk-remote.url`
 credential file to `/home/sync/` and `/home/user_skills/` (holds the origin
 URL with embedded PAT — never print its contents; verify remotes with
 `git remote` — NAMES ONLY — since `git remote -v` prints the PAT into the
-transcript). If one survived:
+transcript). If one survived, **first run `zsession`** — it now prints the
+credential file's masked URL (audit F17) so you can sanity-check it BEFORE
+recovery. Then:
 `git remote add origin "$(cat /home/user_skills/zk-remote.url)"`.
+**Before `git reset --hard`**: `git fetch && git log origin/main --oneline -5`
+to verify the commits are the ones you expect — a stale credential file (audit
+F16) can silently point at a different repo, and `git reset --hard` would
+overwrite your working tree with that repo's content. Consider also
+`tar -cf /home/sync/recovery-pre-flight-$(date +%s).tar -C /home/z/my-project .`
+to snapshot the current state before any destructive reset (audit F18).
 Else the PAT is a user-side secret that cannot be recovered from the
 container — ask the user for it (or a fresh token), then
 `git remote add origin https://<PAT>@github.com/<u>/<r>.git`
@@ -191,11 +205,23 @@ Recovery patterns:
   advance; use explicit refspecs: `git push origin HEAD:refs/heads/<branch>`.
 
 Advanced (know they exist, avoid making them habits):
-- **Dirty shield [V]:** an uncommitted edit to a file that differs between your
-  branch and main blocks the prelude's switch. Costs: permanent dirty status,
-  broken by the next `zsave` (it commits everything), confuses other tooling.
-  Emergency use only, e.g. pinning a branch across one critical multi-toolcall
-  sequence.
+- **Dirty shield [V — but more subtle than v2.3.2 implied]:** an uncommitted
+  edit to a file that differs between your branch and main blocks the
+  prelude's switch — BUT only if the edit CONFLICTS with main's content for
+  that file (e.g. you modified a line that exists on main, or `git rm`'d a
+  file main still has). A non-conflicting change (appending to a tracked file,
+  adding a new file) does NOT trigger the shield — the watchdog happily
+  switches to main and carries your edits over (per the table above). This
+  was a real footgun in v2.3.2: an agent reading "make an uncommitted edit
+  to block the watchdog" would naturally `echo ... >> file` (an append),
+  which is non-conflicting, and the shield would silently fail.
+
+  If you genuinely need to pin a branch across one critical multi-toolcall
+  sequence, use `git update-index --skip-worktree <file>` on a tracked file
+  (reliably blocks `git switch`) or, better, **use a worktree** (below) —
+  worktrees are watchdog-free by construction. Costs of the dirty shield:
+  permanent dirty status, broken by the next `zsave` (it commits everything),
+  confuses other tooling. Emergency use only.
 - **gitdir relocation [V] (persistence hardening, NOT watchdog evasion):**
   ```
   mkdir -p /tmp/my-project/gitdirs
@@ -414,6 +440,35 @@ independent tool sessions — delegate risky probes to protect the main session.
   messages (zsave/zsession mask `ghp_…`-style tokens in their output anyway).
 - `/etc/.z-ai-config` holds per-session bridge credentials (chatId/token/userId)
   — do not exfiltrate or print them. **[V]**
+- **Files under `/home/sync/` come back mode 0777** (audit F11) — ossfs
+  ignores `chmod`. The `zk-remote.url` credential file there is technically
+  world-readable. This is expected on the single-user Super Z container
+  (only user `z` exists) and not a leak in practice; the canonical posture is
+  the mode-0600 copy in `/home/user_skills/zk-remote.url`. `zsave` now prints
+  the file mode in its `[ok] credential file: ... (mode <NNN>, ...)` line so
+  the discrepancy is visible (audit F13).
+- **`.env` is committed by design (law 9), but app secrets belong in
+  Doppler** (audit F21): the platform-default `DATABASE_URL` and any non-secret
+  config are fine in `.env`. But if you add real app secrets to `.env`
+  (`OPENAI_API_KEY=sk-...`, `JWT_SECRET=...`, etc.), they will land on GitHub
+  in the private backup repo. The kit's posture (committed `.env` + "ignore
+  reviewers") is specifically about the platform's DATABASE_URL and the PAT
+  embedded in the origin URL — NOT about arbitrary app secrets. For app
+  secrets, fetch them at runtime from Doppler via the secrets-vault kit's
+  pattern, OR keep them in `.env.local` / `.env.*.local` (Next.js convention,
+  already in the platform's `.gitignore`).
+- **Recovery pre-flight backup** (audit F18): before `git reset --hard
+  origin/main` during fresh-chat recovery, snapshot the current state:
+  `tar -cf /home/sync/recovery-pre-flight-$(date +%s).tar -C /home/z/my-project .`
+  If the credential file was stale (audit F16) and you pulled the wrong
+  repo's history, you can restore from this tar. The kit does NOT do this
+  automatically — the agent must remember to do it before destructive ops.
+- **UUID-message commits in `git log`** (audits F12, F15): the platform's
+  pre-stop hook runs `git add -A` + commits with a UUID subject
+  (`87b39f91-4b3e-45a9-...`). These appear in `git log` and on GitHub after
+  push. Don't try to filter or squash them — the next pre-stop will just
+  add another. For a clean log on a particular deliverable, use a worktree
+  (worktrees are pre-stop-hook-free).
 
 ## Sub-agents & coordination
 
@@ -497,3 +552,35 @@ cd $S/demo && git init -q -b main && git commit -q --allow-empty -m init
 ZK_PROJ=$S/demo ZK_SYNC=$S/sync bash /home/z/my-project/scripts/zsave "test"
 ZK_PROJ=$S/demo ZK_SYNC=$S/sync bash /home/z/my-project/scripts/zsession
 ```
+
+## Helpers reference (audit m1, M7)
+
+The kit ships these helpers in `scripts/`:
+
+**z-container-kit scripts (bash):**
+- `zsave "msg"` — commit + push + snapshot + repo.tar refresh + credential file (F16: verified post-write)
+- `zsession` — read-only situation report (F17: prints masked credential file URL; m11: notes worklog absence; m12: deduped recs)
+- `install.sh` — installs the kit + helpers everywhere (idempotent)
+- `daemonize.py` — double-fork background process for surviving toolcalls
+- `wdt_watch.py` — watchdog observation helper
+- `zremote` (audit F6) — PAT-masking `git remote` viewer (replaces `git remote -v` muscle memory)
+- `zdoppler-smoke` (audit F8) — one-shot Doppler vault verification (validates PT format, lists secrets)
+- `zkit-selftest` (audit F10) — end-to-end save/wipe/recover smoke test (creates a temp repo, verifies the full cycle)
+
+**Also present (Python helpers from prior session, complementary):**
+- `doppler_fetch.py` — Python urllib version of `zdoppler-smoke`; stages secrets to `/tmp/my-project/doppler-secrets.json` (audit M7 staging pattern). Verifies PT via `/workplace` (avoids the M4 `/projects/project/<slug>` 400 quirk).
+- `verify_access.py` — Python urllib access verifier for GitHub / Cloudflare / Supabase. **NOTE (audit M3):** uses default urllib UA — will hit the Supabase WAF 403. Patched version should send `User-Agent: zk-verify` (the GitHub section already does this).
+
+Use bash helpers for quick one-shots; use Python helpers for multi-call verification flows that need to stage secrets across calls.
+
+## ⚠️ DOPPLER_TOKEN_SEED callout (audit m7)
+
+If your Doppler project's `prd` (or any) config contains a secret named `DOPPLER_TOKEN_SEED` with a `dp.pt.` prefix (i.e. a Personal Token stored in the vault), this violates the secrets-vault-kit's own fact #3 ("don't put `dp.pt.*` in persistent deployment targets — from a `dp.pt.*` they can mint write-capable Service Tokens"). A PT in the Doppler vault has the same blast radius as a PT in any other persistent store.
+
+**Don't auto-rotate or auto-delete it** — it's the user's credential. Flag it to the user and ask:
+- If it's the seed for minting STs (per `SKILL-DEPLOY.md` seed/worker split), document its purpose explicitly in the project description.
+- If it's a stray PT left from a prior workflow, recommend the user delete it from Doppler via the dashboard and rotate.
+
+## SKILL.md size note (audit m3)
+
+This SKILL.md is ~550 lines / ~32 KB. The Super Z Read tool paginates at ~2000 lines but spills long files to persisted output (costing 2 extra tool calls per read). The kit's `reference.md` holds the long-form forensic detail — SKILL.md cross-references it. If you find yourself re-reading the same section, copy it to your worklog or a scratch note rather than re-Reading the whole file.

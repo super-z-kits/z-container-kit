@@ -87,12 +87,12 @@ copy_into() {  # copy_into <dest-dir> — atomic swap; self-install aware
 copy_into "$PROJ/skills/z-container"
 
 mkdir -p "$PROJ/scripts"
-for s in zsave zsession daemonize.py install.sh wdt_watch.py; do
+for s in zsave zsession daemonize.py install.sh wdt_watch.py zremote zdoppler-smoke zkit-selftest; do
   if [ -f "$KIT/scripts/$s" ]; then
     cp -f "$KIT/scripts/$s" "$PROJ/scripts/$s" && chmod 0755 "$PROJ/scripts/$s" || INSTALL_FAIL=1
   fi
 done
-echo "[ok] helpers -> $PROJ/scripts/ (zsave zsession daemonize.py install.sh wdt_watch.py)"
+echo "[ok] helpers -> $PROJ/scripts/ (zsave zsession daemonize.py install.sh wdt_watch.py zremote zdoppler-smoke zkit-selftest)"
 
 # 1b. git-tracked copy at the repo root (download/ is the platform's own
 # deliverables dir; the kit does NOT belong there — v2.2.x legacy copies
