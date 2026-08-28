@@ -22,6 +22,10 @@
 # then wire the workspace remote (see SKILL.md "Session start") and re-run
 # install.sh once more from the clone so every copy matches the latest kit.
 set -uo pipefail
+# Source .env to get ZK_PREFIX
+PROJ_PRE="${ZK_PROJ:-/home/z/my-project}"
+[ -f "$PROJ_PRE/.env" ] && set -a && source "$PROJ_PRE/.env" 2>/dev/null && set +a
+PREFIX="${ZK_PREFIX:?ZK_PREFIX not set — see SKILL.md}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT="$(cd "$SCRIPT_DIR/.." && pwd)"

@@ -26,6 +26,9 @@
 # exit:   0 saved (push failure warns but exits 0); 1 if commit/snapshot/
 #         repo.tar failed; 75 if another zsave holds the lock.
 set -uo pipefail
+# Source .env to get ZK_PREFIX and other project config (law 9: .env is committed to git)
+PROJ_PRE="${ZK_PROJ:-/home/z/my-project}"
+[ -f "$PROJ_PRE/.env" ] && set -a && source "$PROJ_PRE/.env" 2>/dev/null && set +a
 
 # ZK_PREFIX must be set — no default. Set it in /home/z/my-project/.env during
 # initial setup (e.g. ZK_PREFIX=myproject). All kit files use this prefix to
