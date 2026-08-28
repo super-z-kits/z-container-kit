@@ -303,7 +303,17 @@ repo-scrub, zip-as-delivery-vehicle model); 2.3.0 — round-6 dogfood fixes
 (cold-start path A, zsession bootstrap detection, zsave nested-repo guard,
 repo-root layout); 2.3.1 — cold-start usability round (install.sh strips
 VCS metadata from kit copies + zip, TL;DR card, absolute-path idioms,
-PAT-once note).
+PAT-once note); 2.3.2 — ut2 verification round (scratch-mode zsession hides
+live credential file). Verification round 2 (sub-agent ut2, blind re-run of the
+cold start against the published v2.3.1): verdict FRICTIONLESS — all four
+regression checkpoints PASS (no .git planted anywhere incl. the zip; kit
+files trackable and reaching github; PAT guidance + TL;DR + absolute idioms
+present; every documented command verbatim first-try; end-to-end zsave
+verified incl. ls-remote branch match and a clean pushed-tree token scan).
+Its two nits drove v2.3.2: zsession no longer lists the live
+/home/user_skills credential file under ZK_PROJ/ZK_SYNC scratch overrides
+(the ZK_SYNC one still shows — it is scratch-local), and the clone-path note
+was already annotated in v2.3.1.
 
 Round 6 (2026-08-28, dogfood session) — a fresh session bootstrapped purely
 via the kit's own documented onboarding (credential-file path, live) and
