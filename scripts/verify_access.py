@@ -65,8 +65,17 @@ def check_cloudflare(key):
             for a in acc.get("result", []):
                 print(f"  account: {a.get('name')} (id ...{a.get('id','')[-6:]})")
         return
-    # Try as Global API Key style (needs email — report if unusable)
-    print(f"  Bearer-verify failed http={code} — trying legacy key probe requires X-Auth-Email (not available)")
+    # R3 NEW #1 fix: /user/tokens/verify returns 401 for account-scoped cfat_* tokens
+    # (the F3 trap documented in secrets-vault-kit). Fall back to GET /accounts —
+    # 200 + non-empty result = token is valid, just lacks User API Tokens: Read scope.
+    code2, acc = req("https://api.cloudflare.com/client/v4/accounts", h)
+    if code2 == 200 and acc.get("success") and acc.get("result"):
+        print(f"  valid API TOKEN (verified via /accounts — /user/tokens/verify returned {code}, the F3 trap)")
+        for a in acc.get("result", []):
+            print(f"  account: {a.get('name')} (id ...{a.get('id','')[-6:]})")
+        return
+    # Both failed — token is actually invalid
+    print(f"  Bearer-verify failed http={code}, /accounts also failed http={code2}")
     print(f"  detail: {json.dumps(v)[:200]}")
 
 
