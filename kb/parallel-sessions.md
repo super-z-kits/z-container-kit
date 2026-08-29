@@ -19,9 +19,10 @@ all your concurrent sessions share the same directory. This is a huge boon
 3. **Phantom file writes**: a parallel session's write to `/home/user_skills/`
    appears in *your* container's filesystem — e.g. a timestamp on
    `${ZK_PREFIX}-doppler.env` that you didn't write.
-4. **Contentious writes on shared kits**: if two sessions both run `install.sh`
-   or update the same kit, the last writer wins. For truly shared resources
-   (secret vault, common agent skills), this could clobber concurrent work.
+4. **Contentious writes on shared kits**: if two sessions both run `refresh.sh`
+   on the same kit, the last writer wins. refresh.sh is copy-then-swap atomic,
+   so the worst case is a session running the previous version for one
+   command — never a half-written kit.
 
 ### What works
 
@@ -44,7 +45,7 @@ all your concurrent sessions share the same directory. This is a huge boon
 - **For shared credential files** (`${ZK_PREFIX}-doppler.env`, `${ZK_PREFIX}-remote.url`): treat
   them as read-mostly. If you must write, preserve any fields you didn't
   set (e.g. don't blow away `DOPPLER_PT_STORED_AT` if it's already there).
-- **For kit installs**: running `install.sh` is idempotent and atomic
+- **For kit upgrades**: running `refresh.sh` is idempotent and atomic
   (copy-then-swap). Concurrent installs are safe — the last one wins, and
   the result is always a complete kit.
 - **For backup repo pushes**: if your push is rejected, don't force-push.

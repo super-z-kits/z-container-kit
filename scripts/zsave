@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zsave — one-command persistence for the Z container. (kit v3.1.6)
+# zsave — one-command persistence for the Z container. (kit v4.0.0)
 #
 #   0. maintain .git/info/exclude (uploads/logs/build junk stay out of git)
 #      + auto-exclude untracked NESTED git repos (scratch clones would
@@ -28,34 +28,23 @@
 # exit:   0 saved (push failure warns but exits 0); 1 if commit/snapshot/
 #         repo.tar failed; 75 if another zsave holds the lock.
 set -uo pipefail
-# Resolve ZK_PREFIX. Order:
-#   1. $SCRIPT_DIR/../config  — .agents/config of the INSTANTIATED kit
-#      (git-tracked, survives boot — the v3.1 canonical location)
-#   2. resolve-prefix.sh      — package-mode fallback (env var, config.env
-#      glob, durable-artifact scan, remote-URL derivation)
-# When run via the scripts/ shim, $0 -> .agents/scripts/zsave, so ../config
-# resolves to .agents/config. When run from the read-only package, ../config
-# is absent and the fallback chain applies.
+# Resolve ZK_PREFIX — location-agnostic (kit v4.0 zero-install): identity
+# comes from the PROJECT ($PROJ/.agents/config — the .env pattern), never
+# from this script's own location. Order: ZK_PREFIX env > project config >
+# legacy config.env > origin-URL derivation (conflict-checked).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PREFIX=""
-if [ -f "$SCRIPT_DIR/../config" ]; then
+if [ -f "$SCRIPT_DIR/resolve-prefix.sh" ]; then
+  # hints go to stderr ON PURPOSE — do not swallow them (PR#2 review F1)
   # shellcheck disable=SC1091
-  source "$SCRIPT_DIR/../config"
-  PREFIX="${ZK_PREFIX:-}"
-fi
-if [ -z "$PREFIX" ]; then
-  # shellcheck disable=SC1091
-  if [ -f "$SCRIPT_DIR/resolve-prefix.sh" ]; then
-    # hints go to stderr ON PURPOSE — do not swallow them (PR#2 review F1)
-    # shellcheck disable=SC1091
-    source "$SCRIPT_DIR/resolve-prefix.sh" || { echo "$0: ZK_PREFIX not resolvable — see the hints above" >&2; exit 1; }
-  else
-    echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1
-  fi
+  source "$SCRIPT_DIR/resolve-prefix.sh" || { echo "$0: ZK_PREFIX not resolvable — see the hints above" >&2; exit 1; }
+else
+  echo "resolve-prefix.sh not found next to $0 — run me from the canonical kit (/home/user_skills/z-container-kit/scripts/)" >&2; exit 1
 fi
 
 PROJ="${ZK_PROJ:-/home/z/my-project}"
 SYNC="${ZK_SYNC:-/home/sync}"
+USK="${ZK_USK:-/home/user_skills}"
 SNAPDIR="$SYNC/${PREFIX}-snapshots"
 KEEP="${ZK_KEEP:-5}"
 case "$KEEP" in ''|*[!0-9]*) KEEP=5 ;; esac
@@ -231,13 +220,14 @@ if [ "$PUSHED" = "yes" ]; then
         FAIL=1
       fi
     }
-    # Friction #9/#19: write ONLY the /home/user_skills copy (PolarFS, mode
-    # 0600). The old /home/sync/ copy is NOT written — ossfs ignores chmod,
-    # leaving the PAT world-readable at 0777. install.sh removes stale
-    # pre-v3.1 copies as a one-shot migration.
-    # (scratch ZK_PROJ/ZK_SYNC test runs must not touch /home/user_skills)
-    if [ "$PROJ" = "/home/z/my-project" ] && [ "$SYNC" = "/home/sync" ]; then
-      write_cred /home/user_skills/${PREFIX}-remote.url
+    # Friction #9/#19: write ONLY the $USK copy (PolarFS, mode 0600). The old
+    # /home/sync/ copy is NOT written — ossfs ignores chmod, leaving the PAT
+    # world-readable at 0777. refresh.sh removes stale pre-v3.1 copies as a
+    # one-shot migration. ZK_USK is honored so scratch tests can verify the
+    # credential write safely; a scratch run that did NOT override ZK_USK
+    # must not pollute the REAL /home/user_skills.
+    if { [ "$USK" != /home/user_skills ] || { [ "$PROJ" = "/home/z/my-project" ] && [ "$SYNC" = "/home/sync" ]; }; } then
+      write_cred "$USK/${PREFIX}-remote.url"
     fi
   fi
 fi
@@ -343,6 +333,27 @@ if [ "$FAIL" = 1 ]; then
   echo "== zsave FINISHED WITH FAILURES — see [warn] lines above ==" >&2
   exit 1
 fi
+
+# --- 5b. portable zip rebuild (LIVE only) -------------------------------------
+# The platform CONSUMES /home/user_skills/z-container.zip at sub-agent session
+# spawn (observed live, round-5 audit). When it does, the zip is gone until
+# something rebuilds it — so zsave rebuilds it if missing. Best-effort.
+if [ "$PROJ" = "/home/z/my-project" ] && [ "$SYNC" = "/home/sync" ] \
+   && [ "$USK" = "/home/user_skills" ] \
+   && [ -d "$USK/z-container-kit" ] && [ ! -f "$USK/z-container.zip" ]; then
+  ZT="/tmp/.zk-zipstage-$$"
+  rm -rf "$ZT"; mkdir -p "$ZT"
+  if cp -r "$USK/z-container-kit" "$ZT/z-container" 2>/dev/null; then
+    rm -rf "$ZT/z-container/.git"
+    rm -f "$ZT/z-container/config"
+    if (cd "$ZT" && zip -qr z-container.zip z-container) 2>/dev/null \
+       && mv -f "$ZT/z-container.zip" "$USK/z-container.zip" 2>/dev/null; then
+      echo "[ok] rebuilt $USK/z-container.zip (was missing — platform consumes it at sub-agent spawn)"
+    fi
+  fi
+  rm -rf "$ZT"
+fi
+
 # --- 6. worktree prune (F22) --------------------------------------------------
 # Stale worktree entries accumulate when worktrees are removed outside git's
 # knowledge (e.g. PolarFS dir vanishes on recycle). Pruning is cheap and safe.

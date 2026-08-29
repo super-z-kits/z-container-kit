@@ -38,12 +38,10 @@ boot template is not empty). Recover the URL from a surviving `${ZK_PREFIX}-remo
 credential file (`git remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`),
 else ask the user for the PAT and re-add by hand (verify with `git remote` —
 names only, never `git remote -v`); then `git fetch && git reset --hard
-origin/main`, then `bash /home/user_skills/z-container-kit/scripts/install.sh`
-(skills/ is kept out of git via `.git/info/exclude` — the install restores
-it, plus `.agents/` shims),
-then
-`bash scripts/zsave "fresh-chat recovery checkpoint"` to re-anchor repo.tar,
-snapshots, and the credential files.
+origin/main` — in v4 that is the whole recovery (`.agents/config` comes back
+with the reset; no install step exists), then
+`bash /home/user_skills/z-container-kit/scripts/zsave "fresh-chat recovery checkpoint"`
+to re-anchor repo.tar, snapshots, and the credential files.
 
 **D. Stuck repo states:**
 - mid-rebase/merge after a failed pull: `git rebase --abort` /

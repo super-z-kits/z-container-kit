@@ -11,29 +11,38 @@ Every operational claim in `SKILL.md` is graded: **[V]** verified live,
 **[S]** read from the boot-script source, **[I]** inherited/unverified.
 The experiment log backing the [V] grades is `evidence/EXPERIMENTS.md`.
 
-## v3.1 layout (two copies, by design)
+## v4 layout (zero-install: one canonical copy + one line per project)
 
-Running `install.sh` **instantiates** the kit into your repo at `.agents/`
-(git-tracked: SKILL.md + scripts/ + kb/ + evidence/ + `config` with your
-`ZK_PREFIX`), creates `scripts/` shims that exec into `.agents/scripts/`,
-and a `skills/z-container/SKILL.md` discovery symlink. The copy in
-`/home/user_skills/z-container-kit/` is the read-only install source. This
-replaces the v2.x four-copy sprawl (repo root + /home/sync + skills/ +
-user_skills) and moves per-project config out of shared
-`/home/user_skills/*-config.env` into repo-local `.agents/config`, which
-survives boot (the platform only rewrites `.env`).
+The kit lives ONCE per account at `/home/user_skills/z-container-kit/`
+(per-user PolarFS — survives recycles, force-kills, and new chats, observed
+live). Helpers run straight from there and are location-agnostic: project
+identity comes from the project, never from the script's own location. A
+project's ONLY kit artifact is `.agents/config` — one line, `ZK_PREFIX=<name>`,
+git-tracked, boot-safe (the platform rewrites `.env` every boot; it never
+touches `.agents/config`). This is the .env pattern: identity travels with
+the repo through GitHub and `repo.tar`, so a cold start needs no install
+step — `git reset --hard origin/main` brings the config back with the code.
+
+Why: v3.x instantiated a full kit copy per repo (`.agents/` tree, `scripts/`
+shims, `skills/` symlink) — the copies went stale, the install flow carried
+a disproportionate share of the bug history, and the whole model assumed a
+single-project account. v4 is multi-kit and multi-repo by construction:
+every kit is a self-contained dir in `/home/user_skills/`, every project is
+a config line, upgrades happen once per account (atomic `refresh.sh`), and
+prefix resolution NEVER silently adopts a shared artifact (it fails loudly,
+listing the account's prefixes — a stale test project can't leak into the
+next session).
+
+- Project setup: `bash /home/user_skills/z-container-kit/scripts/zk-init <name>`
+- Account upgrade: `bash <updated-clone>/scripts/refresh.sh`
+- v3 repo cleanup: `bash /home/user_skills/z-container-kit/scripts/zk-init --migrate-v3`
 
 ## Cold-start bootstrap (fresh session — a PAT and this repo URL, nothing else)
 
-Wire the remote BEFORE the kit install so the installer can derive
-`ZK_PREFIX` from the origin URL (same order as SKILL.md MUST-READ step 4):
-
 ```bash
-# 0) get the kit — LOCAL FIRST: the read-only package at
-#    /home/user_skills/z-container-kit/ survives into new chats; use it when
-#    present. Clone only if it is absent (public repo — no PAT needed):
+# 0) the kit: canonical per-account copy (survives new chats); clone only if absent
 KIT=/home/user_skills/z-container-kit
-[ -f "$KIT/scripts/install.sh" ] || { git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit; KIT=/tmp/my-project/kit; }
+[ -f "$KIT/scripts/zsave" ] || { git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit; KIT=/tmp/my-project/kit; }
 
 # 1) wire the GitHub repo that backs THIS workspace (user-supplied PAT)
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git
@@ -43,27 +52,27 @@ git -C /home/z/my-project fetch
 git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK before reset
 git -C /home/z/my-project reset --hard origin/main
 
-# 3) instantiate the kit (LOAD-BEARING: .agents/ + config + scripts/ shims + skills/ symlink)
-bash "$KIT/scripts/install.sh"
+# 3) identity comes back WITH the repo (.agents/config is committed) — verify:
+source /home/z/my-project/.agents/config && echo "$ZK_PREFIX"
+#    absent (repo predates the kit)? bash "$KIT/scripts/zk-init" <name>
 
 # 4) re-anchor persistence (commit + push + snapshot + repo.tar in one shot)
-bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
+bash "$KIT/scripts/zsave" "fresh-chat bootstrap checkpoint"
 ```
 
-The PAT is typed exactly once (step 1) — it is already in the transcript via
-the user's message; every helper masks it in all subsequent output (rotate at
-github.com/settings/tokens anytime if concerned). install.sh strips any
-clone-borne `.git` from kit copies, so they stay plain, trackable directories.
+There is no install step — that is the whole point. The PAT is typed exactly
+once (step 1); every helper masks it in all subsequent output (rotate at
+github.com/settings/tokens anytime if concerned).
 
-Then run `bash /home/z/my-project/scripts/zsession` (situation report) and
-read `SKILL.md` — the "New session — MUST READ" section comes first.
+Then run `bash /home/user_skills/z-container-kit/scripts/zsession` (situation
+report) and read `SKILL.md` — the "New session — MUST READ" section comes
+first.
 
-Shortcut: if a prior session left `/home/user_skills/${ZK_PREFIX}-remote.url` (the
-zsave-maintained credential file — the prefix is the filename part before
-`-remote.url`; note `${ZK_PREFIX}` is NOT defined in your shell yet, so
-resolve the actual path with `ls /home/user_skills/*-remote.url` first),
-step 1 becomes
-`git -C /home/z/my-project remote add origin "$(cat /home/user_skills/<prefix>-remote.url)"`.
+Shortcut: if a prior session left `/home/user_skills/<prefix>-remote.url`
+(the zsave-maintained credential file — ONE PER PROJECT on multi-repo
+accounts; list them with `ls /home/user_skills/*-remote.url` and pick THIS
+session's project), step 1 becomes
+`git -C /home/z/my-project remote add origin "$(cat /home/user_skills/<your-prefix>-remote.url)"`.
 
 ## Contents
 
@@ -72,8 +81,10 @@ step 1 becomes
 | `SKILL.md` | operational survival guide — start here (MUST-READ session section first) |
 | `reference.md` | deep detail: boot sequence, storage internals, forensics, helper internals |
 | `scripts/zsave` | one-command persistence: commit + push + snapshot + `repo.tar` refresh |
-| `scripts/zsession` | read-only session situation report (recycle detection, watchdog hygiene) |
-| `scripts/install.sh` | instantiates the kit into `.agents/` (idempotent, preserves config) |
+| `scripts/zsession` | read-only session situation report (recycle detection, kit & config registry) |
+| `scripts/zk-init` | project setup: writes `.agents/config` (`--migrate-v3` strips v3 leftovers) |
+| `scripts/refresh.sh` | account-level upgrade: atomic package refresh + zip rebuild |
+| `scripts/install.sh` | REMOVED in v4 (deprecation stub) |
 | `scripts/daemonize.py` | double-fork daemonizer — survives the per-toolcall process cull |
 | `scripts/wdt_watch.py` | forensic HEAD-watchdog observer (how the evidence was gathered) |
 | `kb/` | deep-dive modules (session recovery, new-project setup, watchdog, …) |
@@ -85,5 +96,5 @@ step 1 becomes
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides for safe scratch testing.
-- Version 3.1.6 — provenance and validation history in `reference.md` §13
-  (v3.x entry appended).
+- Version 4.0.0 — provenance and validation history in `reference.md` §13
+  (v4.0 entry appended).

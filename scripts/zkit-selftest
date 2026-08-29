@@ -21,28 +21,24 @@
 # Requires: GH_PAT env var (typically fetched from Doppler per secrets-vault kit).
 
 set -euo pipefail
-# Resolve ZK_PREFIX: .agents/config first (v3.1), then the package-mode fallback.
+# Resolve ZK_PREFIX — location-agnostic (kit v4.0 zero-install): identity
+# comes from the PROJECT ($PROJ/.agents/config — the .env pattern), never
+# from this script's own location. Non-fatal: the live prefix is only needed
+# for the Doppler auto-resolve below; the selftest itself uses an ISOLATED
+# prefix so it never touches live artifacts.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-PREFIX=""
-if [ -f "$SCRIPT_DIR/../config" ]; then
+LIVE_PREFIX=""
+if [ -f "$SCRIPT_DIR/resolve-prefix.sh" ]; then
   # shellcheck disable=SC1091
-  source "$SCRIPT_DIR/../config"
-  PREFIX="${ZK_PREFIX:-}"
+  source "$SCRIPT_DIR/resolve-prefix.sh" 2>/dev/null || true
+  LIVE_PREFIX="${PREFIX:-}"
 fi
-if [ -z "$PREFIX" ]; then
-  # shellcheck disable=SC1091
-  if [ -f "$SCRIPT_DIR/resolve-prefix.sh" ]; then
-    # hints go to stderr ON PURPOSE — do not swallow them (PR#2 review F1)
-    # shellcheck disable=SC1091
-    source "$SCRIPT_DIR/resolve-prefix.sh" || { echo "$0: ZK_PREFIX not resolvable — see the hints above" >&2; exit 1; }
-  else
-    echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1
-  fi
-fi
+# isolated selftest identity — unique per run, [a-z0-9-], ≤24 chars
+PREFIX="selftest-$(date +%s)"
+REPO_NAME="$PREFIX"
 
 # Parse args
 KEEP=0
-REPO_NAME="${PREFIX}-selftest-$(date +%s)"
 GH_PAT="${GH_PAT:-}"
 KIT_OVERRIDE=""
 while [ $# -gt 0 ]; do
@@ -63,10 +59,12 @@ matches, then deletes the temp repo (unless --keep).
 --kit-path PATH: use a specific kit copy (default: auto-detect).
 
 Tests:
-  1. install.sh runs cleanly in a scratch project
-  2. zsave commits + pushes to the temp repo
+  1. zk-init writes the project config (.agents/config) — the ONLY
+     per-project artifact (v4 zero-install)
+  2. zsave (run from the kit, not the project) commits + pushes
   3. credential file is written AND verified (audit F16)
-  4. wipe + recovery restores the working tree correctly
+  4. wipe + recovery restores the working tree — including .agents/config
+     (identity travels with the repo; no re-install needed)
   5. zsession output includes masked credential URL (audit F17)
 EOF
       exit 0 ;;
@@ -75,17 +73,18 @@ EOF
 done
 
 # ─── Pre-flight ────────────────────────────────────────────────────────────────
-# R2 #3 fix: auto-resolve GH_PAT from Doppler if not set
+# R2 #3 fix: auto-resolve GH_PAT from Doppler if not set (uses the LIVE
+# project's doppler env — that's the only place it can come from)
 if [ -z "${GH_PAT:-}" ]; then
-  if [ -f /home/user_skills/${PREFIX}-doppler.env ]; then
-    set -a; source /home/user_skills/${PREFIX}-doppler.env 2>/dev/null; set +a
+  if [ -n "$LIVE_PREFIX" ] && [ -f /home/user_skills/${LIVE_PREFIX}-doppler.env ]; then
+    set -a; source /home/user_skills/${LIVE_PREFIX}-doppler.env 2>/dev/null; set +a
     if [ -n "${DOPPLER_PT:-}" ] && [ -n "${DOPPLER_PROJECT:-}" ] && [ -n "${DOPPLER_CONFIG:-}" ]; then
       GH_PAT=$(curl -sS -H "Authorization: Bearer $DOPPLER_PT" \
         "https://api.doppler.com/v3/configs/config/secrets?project=$DOPPLER_PROJECT&config=$DOPPLER_CONFIG" \
         | jq -r '.secrets.GH_PAT.computed // empty')
       [ -n "$GH_PAT" ] && echo "[info] auto-resolved GH_PAT from Doppler (length ${#GH_PAT})"
     else
-      echo "[fail] DOPPLER_PROJECT or DOPPLER_CONFIG not set in /home/user_skills/${PREFIX}-doppler.env"
+      echo "[fail] DOPPLER_PROJECT or DOPPLER_CONFIG not set in /home/user_skills/${LIVE_PREFIX}-doppler.env"
       echo "       set them to your Doppler project + config, then re-run"
       exit 1
     fi
@@ -93,7 +92,7 @@ if [ -z "${GH_PAT:-}" ]; then
 fi
 if [ -z "${GH_PAT:-}" ]; then
   echo "[fail] GH_PAT env var not set and couldn't auto-resolve from Doppler." >&2
-  echo "       set GH_PAT manually, or ensure /home/user_skills/${PREFIX}-doppler.env exists" >&2
+  echo "       set GH_PAT manually, or ensure the live project's /home/user_skills/<prefix>-doppler.env exists" >&2
   exit 1
 fi
 
@@ -102,24 +101,24 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-# Resolve the kit path
+# Resolve the kit path (v4: a kit copy has zk-init + zsave; no installer)
 KIT=""
 if [ -n "$KIT_OVERRIDE" ]; then
-  if [ -f "$KIT_OVERRIDE/scripts/install.sh" ] && [ -f "$KIT_OVERRIDE/scripts/zsave" ]; then
+  if [ -f "$KIT_OVERRIDE/scripts/zk-init" ] && [ -f "$KIT_OVERRIDE/scripts/zsave" ]; then
     KIT="$KIT_OVERRIDE"
   else
-    echo "[fail] --kit-path $KIT_OVERRIDE does not contain install.sh + zsave" >&2
+    echo "[fail] --kit-path $KIT_OVERRIDE does not contain zk-init + zsave" >&2
     exit 1
   fi
 else
-  for p in /home/user_skills/z-container-kit /home/sync/z-container-kit /home/z/my-project/z-container-kit; do
-    if [ -f "$p/scripts/install.sh" ] && [ -f "$p/scripts/zsave" ]; then
+  for p in /home/user_skills/z-container-kit /tmp/my-project/kit /home/z/my-project/z-container-kit; do
+    if [ -f "$p/scripts/zk-init" ] && [ -f "$p/scripts/zsave" ]; then
       KIT="$p"; break
     fi
   done
 fi
 if [ -z "$KIT" ]; then
-  echo "[fail] could not find a z-container-kit copy with install.sh + zsave" >&2
+  echo "[fail] could not find a z-container-kit copy with zk-init + zsave" >&2
   exit 1
 fi
 echo "=== zkit-selftest ==="
@@ -130,7 +129,8 @@ echo "  temp repo:    $REPO_NAME  (will be created under your GH user, deleted u
 SCRATCH="/tmp/my-project/zkit-selftest-$$"
 PROJ="$SCRATCH/proj"
 SYNC="$SCRATCH/sync"
-mkdir -p "$PROJ" "$SYNC"
+USK="$SCRATCH/usk"
+mkdir -p "$PROJ" "$SYNC" "$USK"
 
 # Cleanup trap
 cleanup() {
@@ -162,17 +162,20 @@ CLONE_URL="$(jq -r .clone_url /tmp/zkit-selftest-create.json)"
 echo "  ✅ created: $CLONE_URL"
 rm -f /tmp/zkit-selftest-create.json
 
-# ─── Step 1: install kit in scratch project ────────────────────────────────────
+# ─── Step 1: init the scratch project (v4: config only, no install) ───────────
 echo
-echo "--- Step 1: install kit in $PROJ ---"
+echo "--- Step 1: zk-init in $PROJ (writes .agents/config — the only per-project artifact) ---"
 cd "$PROJ"
 git init -q -b main
 git config user.email "zkit-selftest@super-z.local"
 git config user.name "zkit-selftest"
 git remote add origin "https://${GH_PAT}@${CLONE_URL#https://}"
-ZK_PROJ="$PROJ" ZK_SYNC="$SYNC" bash "$KIT/scripts/install.sh" >/dev/null 2>&1 \
-  || { echo "  [fail] install.sh failed"; exit 1; }
-echo "  ✅ install.sh succeeded; helpers in $PROJ/scripts/"
+ZK_PROJ="$PROJ" bash "$KIT/scripts/zk-init" "$PREFIX" >/dev/null 2>&1 \
+  || { echo "  [fail] zk-init failed"; exit 1; }
+[ -f "$PROJ/.agents/config" ] && grep -q "ZK_PREFIX=$PREFIX" "$PROJ/.agents/config" \
+  || { echo "  [fail] .agents/config missing or wrong prefix"; exit 1; }
+echo "  ✅ zk-init succeeded; .agents/config (ZK_PREFIX=$PREFIX) written"
+[ ! -e "$PROJ/scripts/zsave" ] && echo "  ✅ zero-install confirmed: no scripts/ shims, no .agents kit tree"
 
 # ─── Step 2: write content + zsave ────────────────────────────────────────────
 echo
@@ -181,18 +184,18 @@ echo "selftest marker $(date -u +%s)" > "$PROJ/selftest-marker.txt"
 echo "another file" > "$PROJ/another.txt"
 mkdir -p "$PROJ/subdir"
 echo "nested file" > "$PROJ/subdir/nested.txt"
-ZK_PROJ="$PROJ" ZK_SYNC="$SYNC" bash "$PROJ/scripts/zsave" "zkit-selftest checkpoint" 2>&1 | sed 's/^/    /' \
+ZK_PROJ="$PROJ" ZK_SYNC="$SYNC" ZK_USK="$USK" bash "$KIT/scripts/zsave" "zkit-selftest checkpoint" 2>&1 | sed 's/^/    /' \
   || { echo "  [fail] zsave failed"; exit 1; }
-echo "  ✅ zsave succeeded"
+echo "  ✅ zsave succeeded (run from the kit dir, not the project)"
 
 # ─── Step 3: verify credential file (audit F16) ───────────────────────────────
 echo
 echo "--- Step 3: verify credential file (audit F16) ---"
-if [ ! -s "$SYNC/${PREFIX}-remote.url" ]; then
-  echo "  [fail] $SYNC/${PREFIX}-remote.url missing or empty"
+if [ ! -s "$USK/${PREFIX}-remote.url" ]; then
+  echo "  [fail] $USK/${PREFIX}-remote.url missing or empty"
   exit 1
 fi
-CRED_URL="$(cat "$SYNC/${PREFIX}-remote.url")"
+CRED_URL="$(cat "$USK/${PREFIX}-remote.url")"
 EXPECTED_URL="$(git -C "$PROJ" remote get-url origin)"
 if [ "$CRED_URL" = "$EXPECTED_URL" ]; then
   echo "  ✅ credential file content matches origin URL (length ${#CRED_URL})"
@@ -212,11 +215,19 @@ cd "$PROJ"
 git init -q -b main
 git config user.email "zkit-selftest@super-z.local"
 git config user.name "zkit-selftest"
-RECOVERED_URL="$(cat "$SYNC/${PREFIX}-remote.url")"
+RECOVERED_URL="$(cat "$USK/${PREFIX}-remote.url")"
 git remote add origin "$RECOVERED_URL"
 git fetch -q origin
 git reset --hard origin/main 2>&1 | sed 's/^/    /'
 echo "  ✅ recovery completed"
+# v4 load-bearing claim: identity travels WITH the repo — the config must be
+# back after reset --hard, with no install step
+if [ -f "$PROJ/.agents/config" ] && grep -q "ZK_PREFIX=$PREFIX" "$PROJ/.agents/config"; then
+  echo "  ✅ .agents/config came back with the repo (zero-install cold start works)"
+else
+  echo "  [fail] .agents/config missing after recovery — identity did NOT travel with the repo"
+  exit 1
+fi
 
 # ─── Step 5: verify recovered state matches ────────────────────────────────────
 echo
@@ -248,7 +259,7 @@ fi
 # ─── Step 6: zsession sanity (audit F17) ──────────────────────────────────────
 echo
 echo "--- Step 6: zsession sanity check (audit F17: masked credential URL printed?) ---"
-ZK_PROJ="$PROJ" ZK_SYNC="$SYNC" bash "$PROJ/scripts/zsession" 2>&1 | grep -E 'credential file|origin \(masked\)' | sed 's/^/    /' \
+ZK_PROJ="$PROJ" ZK_SYNC="$SYNC" ZK_USK="$USK" ZK_PREFIX="$PREFIX" bash "$KIT/scripts/zsession" 2>&1 | grep -E 'credential file|origin \(masked\)' | sed 's/^/    /' \
   || echo "  [note] zsession output did not include credential URL line (kit may be older than audit F17)"
 
 echo

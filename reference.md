@@ -205,20 +205,27 @@ unknown; ossfs df shows 16E (unlimited-looking) — actual bucket quota unknown.
   actions). No persistent changes (mount checks create+remove a unique
   probe file); state file parsed with sed, never sourced. ZK_PROJ override
   cleanly skips live-project-only checks. Cold-start detection (no remote +
-  no state file): prints the exact bootstrap sequence — kit source
-  (surviving copy or the public canonical clone URL), remote recovery
-  (credential file or PAT+URL), fetch+reset, LOAD-BEARING install, first
-  zsave — and never recommends zsave before its script exists.
+  no state file): prints the exact bootstrap sequence — kit source (canonical
+  per-account copy or the public clone URL), remote recovery (EVERY
+  credential file listed with masked URLs — multi-repo aware), fetch+reset
+  (config comes back with the repo), identity verify (zk-init hint), first
+  zsave. v4: kit & config registry section (canonical kit version, project
+  config, account prefixes as info-only, v3 leftovers, other kits).
 - `daemonize.py`: double-fork + setsid + stdio to --log (or /dev/null) +
   `--cwd` + execvp. Reparented to PID 1; survives all toolcalls; dies on
   recycle.
-- `install.sh`: kit → skills/z-container (tar coverage), scripts →
-  my-project/scripts (git coverage), git-tracked copy →
-  z-container-kit at the repo ROOT (github coverage; v2.2.x legacy copies
-  at download/z-container-kit are auto-removed), kit copies →
-  /home/sync/z-container-kit and /home/user_skills/z-container-kit.
-  Self-install-aware, atomic copy-then-swap, 0644 mode normalization,
-  version-skew note, nonzero exit on failure.
+- `zk-init` (v4, replaces install.sh's project role): writes the ONE
+  per-project artifact — `.agents/config` (ZK_PREFIX=<name>); --force
+  overwrites (the wrong-prefix fix); --migrate-v3 strips a v3-era kit tree
+  (.agents/SKILL.md, scripts/ shims, skills/z-container symlink) keeping the
+  config; --status inspects. Sets the safe.directory git-config entry.
+- `refresh.sh` (v4, replaces install.sh's account role): atomic
+  copy-then-swap of the canonical /home/user_skills/z-container-kit package
+  from a kit clone (strips .git/__pycache__/config; 0644 normalization;
+  version reporting), rebuilds the portable zip, removes stale pre-v3.1
+  /home/sync/*-remote.url copies. Never touches any project.
+- `install.sh`: REMOVED in v4 (deprecation stub pointing at zk-init +
+  refresh.sh).
 
 ## 11. Sub-agent playbook (container deltas)
 
@@ -422,3 +429,39 @@ through v3.1.5 and this round's own py_compile staged two more; all four are
 now removed and a real .gitignore (__pycache__/, *.pyc) added. Net effect:
 zero net-new directives lost (worktree isolation, zsave ownership, lockout
 delegation, recovery, validation loop all survive).
+
+**v4.0.0 (2026-08-29, zero-install redesign):** the multi-kit / multi-repo
+round. Owner review: the kit "was designed in a naive, center of the world,
+singular, i am the only kit in the whole universe mindset" — two structural
+flaws: (1) it assumed ONE kit, while the account already runs
+z-container-kit + secrets-vault-kit + install-user-skill (the installed svk
+copy had gone stale with no refresh mechanism, and its platform-consumed zip
+was never rebuilt); (2) it assumed ONE repo, while prefix resolution
+silently adopted whatever shared /home/user_skills artifact it found first
+(the owner's fresh-account test: a stale `zk-onboard-test` prefix leaked
+into the next session's report). The v4 model: the kit lives ONCE per
+account (/home/user_skills/z-container-kit/ — per-user PolarFS, durability
+observed twice), helpers are location-agnostic and read identity from the
+PROJECT (.agents/config — the .env pattern, one line, git-tracked; v3
+already wrote this file, so v3 repos work unchanged), and every v3
+instantiation artifact is gone (.agents kit tree, scripts/ shims, skills/
+symlink, install.sh → stub). New scripts: zk-init (project setup + v3
+migration + --status), refresh.sh (atomic account-level upgrade + zip
+rebuild). resolve-prefix.sh rewritten: env > project config > single legacy
+config.env > origin-URL basename ONLY when unambiguous (conflicting
+artifacts → loud failure listing them; _zk_found_prefixes for reporting);
+shared artifacts are per-USER evidence, never identity. zsave: honors ZK_USK
+for the credential write (scratch-verifiable), rebuilds the portable zip
+when the platform has consumed it. zsession: kit & config registry (canonical
+version, project config, account prefixes, v3 leftovers, other kits) +
+multi-repo-aware cold start (lists EVERY credential file with masked URLs).
+zkit-selftest rewritten for v4 (was stale: its step 3 checked a cred file
+v3.1 zsave no longer writes) with an isolated per-run prefix. SKILL.md:
+new "Multi-kit & multi-repo model" section, layout rewritten, cold start
+drops the install step (config returns with reset --hard), B1 lists
+credential files per-project. kb/new-project.md rewritten around zk-init +
+the v4 resolution order; kb/session-recovery.md paths A/B updated; README
+rewritten. Validation: 30/30 scratch assertions (scripts/v400-scratch-test.sh
+on the workspace side: zero-install, prefix isolation, zk-onboard-test
+scenario fails loudly, v3 compat, migration, clone round-trip, stub,
+refresh self-guard, registry) + syntax gates + fresh-context round.

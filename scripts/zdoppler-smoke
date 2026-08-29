@@ -18,23 +18,17 @@
 #   zdoppler-smoke --show-values     # ALSO print secret values (DANGER: leaks to transcript)
 
 set -euo pipefail
-# Resolve ZK_PREFIX: .agents/config first (v3.1), then the package-mode fallback.
+# Resolve ZK_PREFIX — location-agnostic (kit v4.0 zero-install): identity
+# comes from the PROJECT ($PROJ/.agents/config — the .env pattern), never
+# from this script's own location.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PREFIX=""
-if [ -f "$SCRIPT_DIR/../config" ]; then
+if [ -f "$SCRIPT_DIR/resolve-prefix.sh" ]; then
+  # hints go to stderr ON PURPOSE — do not swallow them (PR#2 review F1)
   # shellcheck disable=SC1091
-  source "$SCRIPT_DIR/../config"
-  PREFIX="${ZK_PREFIX:-}"
-fi
-if [ -z "$PREFIX" ]; then
-  # shellcheck disable=SC1091
-  if [ -f "$SCRIPT_DIR/resolve-prefix.sh" ]; then
-    # hints go to stderr ON PURPOSE — do not swallow them (PR#2 review F1)
-    # shellcheck disable=SC1091
-    source "$SCRIPT_DIR/resolve-prefix.sh" || { echo "$0: ZK_PREFIX not resolvable — see the hints above" >&2; exit 1; }
-  else
-    echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1
-  fi
+  source "$SCRIPT_DIR/resolve-prefix.sh" || { echo "$0: ZK_PREFIX not resolvable — see the hints above" >&2; exit 1; }
+else
+  echo "resolve-prefix.sh not found next to $0 — run me from the canonical kit (/home/user_skills/z-container-kit/scripts/)" >&2; exit 1
 fi
 
 ENV_FILE="${ZK_DOPPLER_ENV:-/home/user_skills/${PREFIX}-doppler.env}"

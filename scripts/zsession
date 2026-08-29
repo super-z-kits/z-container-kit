@@ -1,36 +1,28 @@
 #!/usr/bin/env bash
 # zsession — Z-container situation report at session start (read-only).
-# (kit v3.1.6)
+# (kit v4.0.0)
 # Makes no persistent changes: mount checks create+remove one unique
 # .${PREFIX}-rw-$$ probe file; git commands only read (status may refresh the
 # index stat-cache, which is cosmetic).
 #
 # usage: zsession
-# env:  ZK_PROJ, ZK_SYNC — pointing them at scratch dirs gives a full
+# env:  ZK_PROJ, ZK_SYNC, ZK_USK — pointing them at scratch dirs gives a full
 #       scratch-project report (live-project checks are skipped cleanly).
 set -uo pipefail
-# Resolve ZK_PREFIX. Order:
-#   1. $SCRIPT_DIR/../config — .agents/config of the INSTANTIATED kit (v3.1 canonical)
-#   2. resolve-prefix.sh     — package-mode fallback chain
-# Friction #18: do NOT die when resolution fails — the cold-start help below
-# must still print. PREFIX stays empty; live-only checks degrade gracefully.
+# Resolve ZK_PREFIX — location-agnostic (kit v4.0 zero-install): identity
+# comes from the PROJECT ($PROJ/.agents/config — the .env pattern), never
+# from this script's own location. Friction #18: do NOT die when resolution
+# fails — the cold-start help below must still print. PREFIX stays empty;
+# live-only checks degrade gracefully.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PREFIX=""
-if [ -f "$SCRIPT_DIR/../config" ]; then
+if [ -f "$SCRIPT_DIR/resolve-prefix.sh" ]; then
+  # suppress ONLY the recipe here — the kit&config section below shows the
+  # account's found prefixes + the zk-init rec (better guidance than raw hints)
   # shellcheck disable=SC1091
-  source "$SCRIPT_DIR/../config"
-  PREFIX="${ZK_PREFIX:-}"
+  source "$SCRIPT_DIR/resolve-prefix.sh" 2>/dev/null || true
 fi
-if [ -z "$PREFIX" ]; then
-  # shellcheck disable=SC1091
-  if ! source "$SCRIPT_DIR/resolve-prefix.sh" 2>/dev/null; then
-    if [ -z "${ZK_PREFIX:-}" ]; then
-      PREFIX=""
-    else
-      PREFIX="$ZK_PREFIX"
-    fi
-  fi
-fi
+[ -n "${PREFIX:-}" ] || PREFIX="${ZK_PREFIX:-}"
 # token masker for anything echoed into transcripts (PAT-bearing URLs,
 # branch names, commit subjects, state-file values)
 # Friction #20: defense-in-depth — also mask dp.pt.*/dp.st.*/cfat_*/sbp_*
@@ -182,20 +174,51 @@ else
   echo "skipped — watchdog only applies to /home/z/my-project (ZK_PROJ override detected)"
 fi
 
-line "kit presence"
-# v3.1 layout: instantiated .agents/ + shims + discovery symlink + read-only
-# package. Legacy copies (z-container-kit/ at repo root, /home/sync kit copy)
-# are migrated away by install.sh; report them as legacy if still present.
-# Runs in scratch mode too — paths are $PROJ-relative, so scratch installs
-# can be verified with ZK_PROJ/ZK_SYNC overrides.
-for p in "$PROJ/.agents/SKILL.md" "$PROJ/.agents/config" \
-         "$PROJ/.agents/scripts/zsave" "$PROJ/scripts/zsave" \
-         "$PROJ/skills/z-container/SKILL.md" \
-         "$USK/z-container-kit"; do
-  [ -e "$p" ] && echo "present: $p" || echo "MISSING: $p"
+line "kit & config"
+# kit v4.0 zero-install model: ONE canonical package per account + a tiny
+# per-project config (.agents/config — the .env pattern). No per-project
+# kit copies exist; v3 leftovers are reported, not migrated silently.
+if [ -f "$USK/z-container-kit/SKILL.md" ]; then
+  echo "canonical kit: $USK/z-container-kit (v$(sed -n 's/^  version: "\(.*\)"/\1/p' "$USK/z-container-kit/SKILL.md" 2>/dev/null | head -1))"
+else
+  echo "MISSING: canonical kit $USK/z-container-kit"
+  echo "  bootstrap: git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit"
+fi
+if [ -f "$USK/z-container.zip" ]; then
+  echo "portable zip: present"
+else
+  echo "portable zip: MISSING (the next zsave rebuilds it — the platform consumes it at sub-agent spawn)"
+fi
+if [ -n "$PREFIX" ]; then
+  echo "project config: $PROJ/.agents/config (ZK_PREFIX=$PREFIX)"
+else
+  echo "project config: MISSING — initialize: bash $SCRIPT_DIR/zk-init <name>"
+fi
+# shared-artifact prefixes: INFO only — on a multi-repo account these are
+# ambiguous evidence, never identity (the zk-onboard-test lesson)
+FOUND=""
+[ -f "$SCRIPT_DIR/resolve-prefix.sh" ] && FOUND="$(_zk_found_prefixes 2>/dev/null || true)"
+[ -n "$(printf '%s' "$FOUND" | tr -d ' ')" ] && echo "account prefixes (shared artifacts — pick yours, never adopt blindly):$FOUND"
+# v3 kit leftovers (harmless: v4 helpers never read them)
+V3LEFT=""
+for p in SKILL.md reference.md README.md scripts kb evidence; do
+  [ -e "$PROJ/.agents/$p" ] && V3LEFT="$V3LEFT .agents/$p"
+done
+[ -e "$PROJ/skills/z-container" ] && V3LEFT="$V3LEFT skills/z-container"
+if [ -n "$V3LEFT" ]; then
+  echo "v3 kit leftovers (harmless; strip with: bash $SCRIPT_DIR/zk-init --migrate-v3):$V3LEFT"
+fi
+# multi-kit registry: every other skill dir under /home/user_skills
+for d in "$USK"/*/; do
+  [ -d "$d" ] || continue
+  n="$(basename "$d")"
+  [ "$n" = "z-container-kit" ] && continue
+  [ -f "$d/SKILL.md" ] || continue
+  v="$(sed -n 's/^  version: "\(.*\)"/\1/p' "$d/SKILL.md" 2>/dev/null | head -1)"
+  echo "kit: $n${v:+ (v$v)}"
 done
 for legacy in "$PROJ/z-container-kit" "$SYNC/z-container-kit"; do
-  [ -e "$legacy" ] && echo "legacy copy still present (install.sh migrates it away): $legacy"
+  [ -e "$legacy" ] && echo "legacy v2 kit copy still present (remove manually): $legacy"
 done
 
 line "services"
@@ -213,39 +236,43 @@ n=0
 rec() { n=$((n + 1)); echo "$n. $*"; }
 
 # fresh-chat cold start: no remote, no state — print the exact bootstrap
-# sequence (do NOT recommend zsave before its script exists)
+# sequence (do NOT recommend zsave before identity is set)
 COLD=0
 if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
   COLD=1
   KITSRC=""
   for p in /home/user_skills/z-container-kit "$SYNC/z-container-kit" "$PROJ/z-container-kit"; do
-    [ -f "$p/scripts/install.sh" ] && { KITSRC="$p"; break; }
-  done
-  CRED=""
-  for cf in "$USK/${PREFIX}-remote.url" "$SYNC/${PREFIX}-remote.url"; do
-    [ -s "$cf" ] && { CRED="$cf"; break; }
+    [ -f "$p/scripts/zsave" ] && { KITSRC="$p"; break; }
   done
   echo "COLD START detected (no remote, no zsave state). Exact sequence:"
   if [ -n "$KITSRC" ]; then
-    echo "  0. kit copy available at: $KITSRC"
+    echo "  0. kit available at: $KITSRC (zero-install — run helpers from there)"
   else
     echo "  0. git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit"
-    echo "     bash /tmp/my-project/kit/scripts/install.sh   # installs helpers + .agents/"
+    echo "     (helpers run straight from the clone — nothing to install)"
   fi
-  if [ -n "$CRED" ]; then
-    echo "  1. git -C $PROJ remote add origin \"\$(cat $CRED)\"   # credential file found"
-  else
+  # multi-repo aware: list EVERY credential file, let the agent pick ITS project's
+  NCF=0
+  for cf in "$USK"/*-remote.url; do
+    [ -s "$cf" ] || continue
+    NCF=$((NCF+1))
+    CF_URL="$(cat "$cf" 2>/dev/null || true)"
+    echo "  1. credential file found: $cf -> $(printf '%s' "$CF_URL" | mask)"
+  done
+  if [ "$NCF" = 0 ]; then
     echo "  1. git -C $PROJ remote add origin https://<PAT>@github.com/<user>/<repo>.git  # ask the user if no PAT"
+  elif [ "$NCF" -gt 1 ]; then
+    echo "     ^ multiple credential files = multiple projects on this account —"
+    echo "     pick THIS session's project by its prefix (filename before -remote.url)"
   fi
-  echo "  2. git -C $PROJ fetch origin"
-  echo "     git -C $PROJ log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK before reset (F18; masker = SKILL.md step 4)"
+  echo "  2. git -C $PROJ remote add origin \"\$(cat <your-credential-file>)\""
+  echo "     git -C $PROJ fetch origin"
+  echo "     git -C $PROJ log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK before reset (F18)"
   echo "     git -C $PROJ reset --hard origin/main   # empty remote? skip"
-  if [ -n "$KITSRC" ]; then
-    echo "  3. bash $KITSRC/scripts/install.sh   # LOAD-BEARING: restores skills/ + helpers"
-  else
-    echo "  3. bash /tmp/my-project/kit/scripts/install.sh   # normalize all copies post-restore"
-  fi
-  echo "  4. bash $PROJ/scripts/zsave 'fresh-chat bootstrap checkpoint'"
+  echo "  3. project identity comes back WITH the repo (.agents/config is committed):"
+  echo "     source $PROJ/.agents/config && echo \$ZK_PREFIX   # verify — if absent:"
+  echo "     bash ${KITSRC:-/tmp/my-project/kit}/scripts/zk-init <name>"
+  echo "  4. bash ${KITSRC:-/tmp/my-project/kit}/scripts/zsave 'fresh-chat bootstrap checkpoint'"
   echo
 fi
 
@@ -254,7 +281,6 @@ if [ ! -e "$PROJ/.git" ]; then
 fi
 if [ "$COLD" != 1 ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
   CRED=""
-  # Friction #19: /home/user_skills copy only (the /home/sync copy is legacy)
   CFS=""
   [ "$LIVE" = 1 ] && CFS="/home/user_skills/${PREFIX}-remote.url"
   for cf in $CFS; do
@@ -266,8 +292,11 @@ if [ "$COLD" != 1 ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; t
     rec "add remote: git -C $PROJ remote add origin https://<PAT>@github.com/<user>/<repo>.git (github = only cross-chat persistence)"
   fi
 fi
-if [ -n "$(git -C "$PROJ" status --porcelain 2>/dev/null)" ] && [ -f "$PROJ/scripts/zsave" ]; then
-  rec "dirty tree — checkpoint: bash $PROJ/scripts/zsave 'session-start checkpoint' (commits ALL current state incl. .env)"
+if [ -z "$PREFIX" ] && [ "$COLD" != 1 ]; then
+  rec "no project identity — initialize: bash $SCRIPT_DIR/zk-init <name>  (or source an existing .agents/config)"
+fi
+if [ -n "$(git -C "$PROJ" status --porcelain 2>/dev/null)" ]; then
+  rec "dirty tree — checkpoint: bash $SCRIPT_DIR/zsave 'session-start checkpoint' (commits ALL current state incl. .env)"
 fi
 # m12 (audit): dedupe — the previous version recommended "run zsave" twice in some
 # states (once for dirty tree, once for "no state yet"). The dirty-tree rec above
@@ -279,8 +308,8 @@ if [ "$LIVE" = 1 ]; then
   fi
   # m12: only recommend "initial zsave" if tree is clean AND no state yet (avoids
   # double-issuing the same action)
-  if [ ! -f "$STATE" ] && [ -f "$PROJ/scripts/zsave" ] && [ -z "$(git -C "$PROJ" status --porcelain 2>/dev/null)" ]; then
-    rec "no zsave state yet — run: bash $PROJ/scripts/zsave 'initial checkpoint'"
+  if [ ! -f "$STATE" ] && [ -z "$(git -C "$PROJ" status --porcelain 2>/dev/null)" ]; then
+    rec "no zsave state yet — run: bash $SCRIPT_DIR/zsave 'initial checkpoint'"
   fi
   # m11 (audit): note if worklog.md is absent so the agent knows to create one.
   # Round-11 F4/F9: the worklog is COMMITTED (survives cross-chat). If it is

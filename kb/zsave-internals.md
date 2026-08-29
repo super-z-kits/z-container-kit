@@ -22,7 +22,7 @@ if commit/snapshot/repo.tar fail — a push failure is a warning):
    success it also refreshes the `${ZK_PREFIX}-remote.url` credential file
    (`/home/user_skills/` only, mode 0600 — v3.1: the `/home/sync/` copy is no
    longer written; ossfs ignores chmod and left it world-readable at 0777,
-   friction #9/#19; install.sh removes stale copies) for fresh-chat remote
+   friction #9/#19; refresh.sh removes stale copies) for fresh-chat remote
    recovery; push
    stderr is echoed with embedded PATs masked;
 4. tar snapshot to `/home/sync/${ZK_PREFIX}-snapshots/proj-<ts>.tar` (keep last 5).
