@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zk-init — project-level kit initialization (kit v4.1)
+# zk-init — project-level kit initialization (kit v5.0)
 #
 # The kit is ZERO-INSTALL: it lives once per ACCOUNT at
 # /home/user_skills/z-container-kit/ (canonical, refreshed by refresh.sh).
@@ -35,7 +35,7 @@ CFG="$AGENTS/config"
 
 usage() {
   cat <<'EOF'
-zk-init — project-level kit initialization (kit v4.0, zero-install)
+zk-init — project-level kit initialization (kit v5.0, zero-install)
 
 The kit lives once per ACCOUNT at /home/user_skills/z-container-kit/.
 The ONLY per-project artifact is a one-line config — the project's "zk env",

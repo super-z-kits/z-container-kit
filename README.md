@@ -11,7 +11,7 @@ Every operational claim in `SKILL.md` is graded: **[V]** verified live,
 **[S]** read from the boot-script source, **[I]** inherited/unverified.
 The experiment log backing the [V] grades is `evidence/EXPERIMENTS.md`.
 
-## v4 layout (zero-install: one canonical copy + one line per project)
+## v5 layout (zero-install, STATIC user-skills, multi-track proven)
 
 The kit lives ONCE per account at `/home/user_skills/z-container-kit/`
 (per-user PolarFS — survives recycles, force-kills, and new chats, observed
@@ -26,13 +26,18 @@ step — `git reset --hard origin/main` brings the config back with the code.
 Why: v3.x instantiated a full kit copy per repo (`.agents/` tree, `scripts/`
 shims, `skills/` symlink) — the copies went stale, the install flow carried
 a disproportionate share of the bug history, and the whole model assumed a
-single-project account. v4 is multi-kit and multi-repo by construction:
-every kit is a self-contained dir in `/home/user_skills/` (kits mind their
-own business — no cross-kit registries or managers), every project is
-a config line, upgrades happen once per account (atomic `refresh.sh`), and
-prefix resolution reads ONLY the env var + the project's `.agents/config`
-(no artifact scanning, no URL guessing — a missing config fails loudly with
-the one-command fix, and a stale artifact can never leak into a session).
+single-project account. v4 made it zero-install, multi-kit and multi-repo
+(kits mind their own business; identity is configuration only). v5 closes
+the last gap — **parallel sessions under one account, sometimes on the SAME
+repo**: `/home/user_skills` has no git (no merge, no rebase, no conflict
+handling), so it is now **read-only for sessions** (the static rule). The
+only sanctioned writes are the three zero-collision ones (atomic kit
+refresh; idempotent zip rebuild; credential files keyed by a unique prefix,
+written atomically and only on change). Same-repo divergence is handled by
+git itself: zsave auto-recovers a rejected push via `pull --rebase` + retry,
+never force-pushes, and concurrent saves serialize on a lock they WAIT for
+instead of failing. Scripts are optional accelerators — every recurring flow
+is documented so plain git + the docs always suffice.
 
 - Project setup: `bash /home/user_skills/z-container-kit/scripts/zk-init <name>`
 - Account upgrade: `bash <updated-clone>/scripts/refresh.sh`
@@ -81,11 +86,10 @@ session's project), step 1 becomes
 |---|---|
 | `SKILL.md` | operational survival guide — start here (MUST-READ session section first) |
 | `reference.md` | deep detail: boot sequence, storage internals, forensics, helper internals |
-| `scripts/zsave` | one-command persistence: commit + push + snapshot + `repo.tar` refresh |
+| `scripts/zsave` | one-command persistence: commit + push (auto-rebase on rejection) + snapshot + `repo.tar` refresh |
 | `scripts/zsession` | read-only session situation report (recycle detection, kit & config status) |
 | `scripts/zk-init` | project setup: writes `.agents/config` (`--migrate-v3` strips v3 leftovers) |
 | `scripts/refresh.sh` | account-level upgrade: atomic package refresh + zip rebuild |
-| `scripts/install.sh` | REMOVED in v4 (deprecation stub) |
 | `scripts/daemonize.py` | double-fork daemonizer — survives the per-toolcall process cull |
 | `scripts/wdt_watch.py` | forensic HEAD-watchdog observer (how the evidence was gathered) |
 | `kb/` | deep-dive modules (session recovery, new-project setup, watchdog, …) |
@@ -97,5 +101,5 @@ session's project), step 1 becomes
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides for safe scratch testing.
-- Version 4.0.0 — provenance and validation history in `reference.md` §13
-  (v4.0 entry appended).
+- Version 5.0.0 — provenance and validation history in `reference.md` §13
+  (v5.0 entry appended).

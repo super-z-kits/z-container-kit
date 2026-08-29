@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # zsession — Z-container situation report at session start (read-only).
-# (kit v4.1.0) Reports THIS kit and THIS project only — kits are
+# (kit v5.0.0) Reports THIS kit and THIS project only — kits are
 # self-contained by design; no cross-kit inventory, no artifact scans.
+# /home/user_skills is STATIC during sessions (read-only except the three
+# sanctioned writes — see SKILL.md); this script writes nothing except its
+# unique .${PREFIX}-rw-$$ rw-probe files (created and removed immediately).
 # Makes no persistent changes: mount checks create+remove one unique
 # .${PREFIX}-rw-$$ probe file; git commands only read (status may refresh the
 # index stat-cache, which is cosmetic).
@@ -128,15 +131,11 @@ if [ -e "$PROJ/.git" ]; then
   # immediately spot a stale credential file (audit F16/F17 root cause).
   # Friction #19: only the /home/user_skills copy exists post-v3.1 (mode 0600,
   # PolarFS). The /home/sync copy is not written anymore (ossfs 0777 hazard).
-  CFS=""
-  [ "$LIVE" = 1 ] && CFS="/home/user_skills/${PREFIX}-remote.url"
-  for cf in $CFS; do
-    if [ -s "$cf" ]; then
-      CF_URL="$(cat "$cf" 2>/dev/null || true)"
-      echo "credential file: $cf"
-      echo "  → $(printf '%s' "$CF_URL" | mask)"
-    fi
-  done
+  if [ "$LIVE" = 1 ] && [ -s "$USK/${PREFIX}-remote.url" ]; then
+    CF_URL="$(cat "$USK/${PREFIX}-remote.url" 2>/dev/null || true)"
+    echo "credential file: $USK/${PREFIX}-remote.url"
+    echo "  → $(printf '%s' "$CF_URL" | mask)"
+  fi
   WT="$(git -C "$PROJ" worktree list 2>/dev/null | tail -n +2 | mask)"
   if [ -n "$WT" ]; then echo "worktrees:"; echo "$WT"; else echo "worktrees: none"; fi
 else
@@ -284,11 +283,7 @@ if [ ! -e "$PROJ/.git" ]; then
 fi
 if [ "$COLD" != 1 ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
   CRED=""
-  CFS=""
-  [ "$LIVE" = 1 ] && CFS="/home/user_skills/${PREFIX}-remote.url"
-  for cf in $CFS; do
-    [ -s "$cf" ] && { CRED="$cf"; break; }
-  done
+  [ "$LIVE" = 1 ] && [ -s "$USK/${PREFIX}-remote.url" ] && CRED="$USK/${PREFIX}-remote.url"
   if [ -n "$CRED" ]; then
     rec "recover remote: git -C $PROJ remote add origin \"\$(cat $CRED)\"  (credential file found: $CRED)"
   else

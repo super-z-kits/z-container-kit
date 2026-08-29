@@ -30,9 +30,11 @@ append-only). This container adds three things:
   sub-agent its own worktree
   (`git -C /home/z/my-project worktree add /tmp/my-project/worktrees/<name> -b feature/<x>`)
   or a scratch dir outside the project.
-- **Sub-agents MUST NOT run `zsave`** — the coordinating agent owns all saves
-  (zsave's per-container lock would otherwise corrupt repo.tar). Pushing from
-  a worktree is always fine.
+- **Sub-agents leave `zsave` to the coordinating agent** — one writer keeps
+  saves from interleaving with the coordinator's own git work. (Concurrent
+  zsaves serialize safely on the lock — v5 made the lock a WAIT, not a
+  failure — so this is an ownership convention, not a corruption guard.)
+  Pushing from a worktree is always fine.
 - Sub-agents get independent tool sessions — delegate risky probes (port
   checks, command filters) to them to protect the main session from the
   terminal-lockout hazard (see `kb/terminal-lockout.md`). When you do, embed
