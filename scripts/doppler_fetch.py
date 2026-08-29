@@ -15,11 +15,24 @@ import urllib.request
 import os, sys, glob
 PREFIX = os.environ.get("ZK_PREFIX")
 if not PREFIX:
+    # v3.1: .agents/config (instantiated kit) takes priority
+    for cand in ("/home/z/my-project/.agents/config",):
+        try:
+            with open(cand) as f:
+                for line in f:
+                    if line.startswith("ZK_PREFIX="):
+                        PREFIX = line.strip().split("=", 1)[1]
+                        break
+            if PREFIX:
+                break
+        except OSError:
+            pass
+if not PREFIX:
     # Auto-discover from /home/user_skills/*-config.env (like resolve-prefix.sh)
     configs = glob.glob("/home/user_skills/*-config.env")
     if len(configs) == 0:
-        print("ZK_PREFIX not configured — no /home/user_skills/*-config.env found")
-        print("See SKILL.md First-time setup")
+        print("ZK_PREFIX not configured — no .agents/config and no /home/user_skills/*-config.env found")
+        print("See SKILL.md 'New project setup'")
         sys.exit(1)
     elif len(configs) > 1:
         print(f"Multiple project configs found: {configs}")

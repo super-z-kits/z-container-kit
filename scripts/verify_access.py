@@ -18,13 +18,22 @@ import urllib.request
 SECRETS = "/tmp/my-project/doppler-secrets.json"
 # No hardcoded repo — use env var or CLI arg. Fail loudly if neither is provided.
 REPO = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VERIFY_REPO", "")
-# Auto-discover ZK_PREFIX from /home/user_skills/*-config.env (like resolve-prefix.sh)
+# Resolve ZK_PREFIX: env var, then .agents/config (v3.1), then config.env glob
+if not os.environ.get("ZK_PREFIX"):
+    try:
+        with open("/home/z/my-project/.agents/config") as f:
+            for line in f:
+                if line.startswith("ZK_PREFIX="):
+                    os.environ["ZK_PREFIX"] = line.strip().split("=", 1)[1]
+                    break
+    except OSError:
+        pass
 if not os.environ.get("ZK_PREFIX"):
     import glob
     configs = glob.glob("/home/user_skills/*-config.env")
     if len(configs) == 0:
-        print("ZK_PREFIX not configured — no /home/user_skills/*-config.env found")
-        print("See SKILL.md First-time setup")
+        print("ZK_PREFIX not configured — no .agents/config and no /home/user_skills/*-config.env found")
+        print("See SKILL.md 'New project setup'")
         sys.exit(1)
     elif len(configs) > 1:
         print(f"Multiple project configs found: {configs}")

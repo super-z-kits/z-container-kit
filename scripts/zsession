@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # zsession — Z-container situation report at session start (read-only).
-# (kit v2.3.2)
+# (kit v3.1.0)
 # Makes no persistent changes: mount checks create+remove one unique
 # .${PREFIX}-rw-$$ probe file; git commands only read (status may refresh the
 # index stat-cache, which is cosmetic).
@@ -9,11 +9,33 @@
 # env:  ZK_PROJ, ZK_SYNC — pointing them at scratch dirs gives a full
 #       scratch-project report (live-project checks are skipped cleanly).
 set -uo pipefail
-# Auto-discover ZK_PREFIX from /home/user_skills/*-config.env (durable — survives recycle)
-source "$(dirname "$0")/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
+# Resolve ZK_PREFIX. Order:
+#   1. $SCRIPT_DIR/../config — .agents/config of the INSTANTIATED kit (v3.1 canonical)
+#   2. resolve-prefix.sh     — package-mode fallback chain
+# Friction #18: do NOT die when resolution fails — the cold-start help below
+# must still print. PREFIX stays empty; live-only checks degrade gracefully.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+PREFIX=""
+if [ -f "$SCRIPT_DIR/../config" ]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/../config"
+  PREFIX="${ZK_PREFIX:-}"
+fi
+if [ -z "$PREFIX" ]; then
+  # shellcheck disable=SC1091
+  if ! source "$SCRIPT_DIR/resolve-prefix.sh" 2>/dev/null; then
+    if [ -z "${ZK_PREFIX:-}" ]; then
+      PREFIX=""
+    else
+      PREFIX="$ZK_PREFIX"
+    fi
+  fi
+fi
 # token masker for anything echoed into transcripts (PAT-bearing URLs,
 # branch names, commit subjects, state-file values)
-mask() { sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g'; }
+# Friction #20: defense-in-depth — also mask dp.pt.*/dp.st.*/cfat_*/sbp_*
+# (the platform bash redactor only covers ghp_*)
+mask() { sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g; s#(dp\.pt\.|dp\.st\.|cfat_|sbp_)[A-Za-z0-9_.-]+#\1***#g'; }
 
 PROJ="${ZK_PROJ:-/home/z/my-project}"
 SYNC="${ZK_SYNC:-/home/sync}"
@@ -98,8 +120,10 @@ if [ -e "$PROJ/.git" ]; then
   # an agent doing fresh-chat recovery has no way to know whether the URL is
   # the RIGHT one for this session. Showing the masked URL lets the agent
   # immediately spot a stale credential file (audit F16/F17 root cause).
-  CFS="$SYNC/${PREFIX}-remote.url"
-  [ "$LIVE" = 1 ] && CFS="$CFS /home/user_skills/${PREFIX}-remote.url"
+  # Friction #19: only the /home/user_skills copy exists post-v3.1 (mode 0600,
+  # PolarFS). The /home/sync copy is not written anymore (ossfs 0777 hazard).
+  CFS=""
+  [ "$LIVE" = 1 ] && CFS="/home/user_skills/${PREFIX}-remote.url"
   for cf in $CFS; do
     if [ -s "$cf" ]; then
       CF_URL="$(cat "$cf" 2>/dev/null || true)"
@@ -150,20 +174,26 @@ if [ "$LIVE" = 1 ]; then
     echo "      git config user.email \"<id>+<username>@users.noreply.github.com\""
     echo "    (get your exact noreply email from GitHub settings)"
   fi
-
-  line "kit presence"
-  for p in "$PROJ/skills/z-container/SKILL.md" "$PROJ/scripts/zsave" \
-           "$PROJ/scripts/zsession" "$PROJ/scripts/daemonize.py" \
-           "$PROJ/z-container-kit" "$SYNC/z-container-kit" \
-           "/home/user_skills/z-container-kit"; do
-    [ -e "$p" ] && echo "present: $p" || echo "MISSING: $p"
-  done
 else
   line "watchdog hygiene"
   echo "skipped — watchdog only applies to /home/z/my-project (ZK_PROJ override detected)"
-  line "kit presence"
-  echo "skipped — live-project check (ZK_PROJ override detected)"
 fi
+
+line "kit presence"
+# v3.1 layout: instantiated .agents/ + shims + discovery symlink + read-only
+# package. Legacy copies (z-container-kit/ at repo root, /home/sync kit copy)
+# are migrated away by install.sh; report them as legacy if still present.
+# Runs in scratch mode too — paths are $PROJ-relative, so scratch installs
+# can be verified with ZK_PROJ/ZK_SYNC overrides.
+for p in "$PROJ/.agents/SKILL.md" "$PROJ/.agents/config" \
+         "$PROJ/.agents/scripts/zsave" "$PROJ/scripts/zsave" \
+         "$PROJ/skills/z-container/SKILL.md" \
+         "/home/user_skills/z-container-kit"; do
+  [ -e "$p" ] && echo "present: $p" || echo "MISSING: $p"
+done
+for legacy in "$PROJ/z-container-kit" "$SYNC/z-container-kit"; do
+  [ -e "$legacy" ] && echo "legacy copy still present (install.sh migrates it away): $legacy"
+done
 
 line "services"
 if ss -tln 2>/dev/null | grep -qE ':(3000|3001)\b'; then
@@ -197,7 +227,7 @@ if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origi
     echo "  0. kit copy available at: $KITSRC"
   else
     echo "  0. git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit"
-    echo "     bash /tmp/my-project/kit/scripts/install.sh   # installs helpers + kit copies"
+    echo "     bash /tmp/my-project/kit/scripts/install.sh   # installs helpers + .agents/"
   fi
   if [ -n "$CRED" ]; then
     echo "  1. git -C $PROJ remote add origin \"\$(cat $CRED)\"   # credential file found"
@@ -219,8 +249,9 @@ if [ ! -e "$PROJ/.git" ]; then
 fi
 if [ "$COLD" != 1 ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
   CRED=""
-  CFS="$SYNC/${PREFIX}-remote.url"
-  [ "$LIVE" = 1 ] && CFS="$CFS /home/user_skills/${PREFIX}-remote.url"
+  # Friction #19: /home/user_skills copy only (the /home/sync copy is legacy)
+  CFS=""
+  [ "$LIVE" = 1 ] && CFS="/home/user_skills/${PREFIX}-remote.url"
   for cf in $CFS; do
     [ -s "$cf" ] && { CRED="$cf"; break; }
   done
@@ -246,9 +277,18 @@ if [ "$LIVE" = 1 ]; then
   if [ ! -f "$STATE" ] && [ -f "$PROJ/scripts/zsave" ] && [ -z "$(git -C "$PROJ" status --porcelain 2>/dev/null)" ]; then
     rec "no zsave state yet — run: bash $PROJ/scripts/zsave 'initial checkpoint'"
   fi
-  # m11 (audit): note if worklog.md is absent so the agent knows to create one
+  # m11 (audit): note if worklog.md is absent so the agent knows to create one.
+  # Round-11 F4/F9: the worklog is COMMITTED (survives cross-chat). If it is
+  # missing, first try to recover it from git history before starting blank —
+  # a "cleanup" commit once removed it from tracking and the content lived on
+  # only in history.
   if [ ! -f "$PROJ/worklog.md" ]; then
-    rec "create worklog: touch $PROJ/worklog.md  (multi-agent coordination surface — see SKILL.md 'Sub-agents & coordination')"
+    WL_HIST="$(git -C "$PROJ" log --all --oneline -- worklog.md 2>/dev/null | head -1)"
+    if [ -n "$WL_HIST" ]; then
+      rec "worklog.md missing but present in history ($WL_HIST) — recover: git -C $PROJ show <that-commit>:worklog.md > $PROJ/worklog.md"
+    else
+      rec "create worklog: touch $PROJ/worklog.md  (multi-agent coordination surface, COMMITTED — see SKILL.md 'Sub-agents & coordination')"
+    fi
   fi
 fi
 if [ "$n" -eq 0 ]; then

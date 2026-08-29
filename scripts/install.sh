@@ -1,157 +1,299 @@
 #!/usr/bin/env bash
-# install.sh — install the z-container kit into this container. (kit v2.3.2)
-# Safe to run from ANY kit copy, including the persistent ones
-# (/home/sync/z-container-kit, /home/user_skills/z-container-kit,
-#  z-container-kit, skills/z-container) — self-install is detected
-# and skipped; updates use copy-then-swap so the previous copy survives a
-# failed copy.
+# install.sh — instantiate the z-container kit into your repo at .agents/
+# (kit v3.1.0)
 #
-# Installs:
-#   docs+scripts -> $PROJ/skills/z-container/   (repo.tar coverage)
-#   runtime helpers -> $PROJ/scripts/            (git/github coverage)
-#   git-tracked copy -> $PROJ/z-container-kit/   (github coverage)
-#   kit copy -> /home/sync/z-container-kit/      (recycle-safe, per-chat)
-#   kit copy -> /home/user_skills/z-container-kit/ (probably cross-chat)
-#   portable zip -> /home/user_skills/z-container.zip (root "z-container/",
-#      the skill-package convention; refreshed from the fresh copy so it
-#      never goes stale — kit files are token-free by construction)
+# Usage:
+#   bash /home/user_skills/z-container-kit/scripts/install.sh   # normal upgrade
+#   bash /tmp/my-project/kit/scripts/install.sh                 # cold-start (from a clone)
+#   ZK_PREFIX=myapp bash <kit>/scripts/install.sh               # non-interactive prefix
 #
-# Cold start (fresh chat, PAT + kit repo URL only):
-#   git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit
-#   bash /tmp/my-project/kit/scripts/install.sh
-# then wire the workspace remote (see SKILL.md "Session start") and re-run
-# install.sh once more from the clone so every copy matches the latest kit.
+# What it creates/refreshes in $PROJ (default /home/z/my-project):
+#   .agents/                  the instantiated kit (git-tracked — COMMIT IT)
+#     .agents/SKILL.md        survival guide (authoritative copy)
+#     .agents/scripts/        helpers (source ../config for ZK_PREFIX)
+#     .agents/kb/             deep-dive modules
+#     .agents/evidence/       experiment logs backing [V] grades
+#     .agents/config          ZK_PREFIX=<name>  (PRESERVED on upgrades)
+#   scripts/<bash-helpers>    shims that exec into .agents/scripts/ (git-tracked)
+#   scripts/<python-helpers>  real copies (python3 invocation is documented)
+#   scripts/resolve-prefix.sh real copy (must stay sourceable)
+#   skills/z-container/SKILL.md  symlink -> ../../.agents/SKILL.md (platform
+#                             discovery; skills/ is git-ignored, recreated here)
+# Plus (live project only):
+#   /home/user_skills/z-container-kit/   read-only package refresh
+#   /home/user_skills/z-container.zip    portable zip refresh
+#   one-shot migrations: stale /home/sync/*-remote.url (mode-0777 PAT leak),
+#   legacy kit copies ($PROJ/z-container-kit, $SYNC/z-container-kit,
+#   $PROJ/download/z-container-kit)
+#
+# Idempotent: re-running upgrades .agents/ in place and always preserves
+# .agents/config. Safe to run from ANY kit copy, including .agents/ itself.
 set -uo pipefail
-# Auto-discover ZK_PREFIX from /home/user_skills/*-config.env (durable — survives recycle)
-source "$(dirname "$0")/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJ="${ZK_PROJ:-/home/z/my-project}"
+AGENTS="$PROJ/.agents"
+USK="${ZK_USK:-/home/user_skills}"          # override for scratch testing
+PKG="$USK/z-container-kit"
+LIVE=0; [ "$PROJ" = "/home/z/my-project" ] && LIVE=1
 INSTALL_FAIL=0
 
-# canonical fallback: the my-project/scripts/ copy has no SKILL.md next to it
-if [ ! -f "$KIT/SKILL.md" ] && [ -f "$PROJ/skills/z-container/SKILL.md" ]; then
-  KIT="$PROJ/skills/z-container"
-fi
 [ -f "$KIT/SKILL.md" ] || {
-  echo "install.sh: SKILL.md not found near $SCRIPT_DIR (nor at $PROJ/skills/z-container)" >&2
+  echo "install.sh: SKILL.md not found near $SCRIPT_DIR" >&2
   exit 1
 }
 
-echo "installing kit from: $KIT"
+# kit version (for skew reporting)
+kit_v() { sed -n 's/^  version: "\(.*\)"/\1/p' "$1/SKILL.md" 2>/dev/null | head -1; }
 
-copy_into() {  # copy_into <dest-dir> — atomic swap; self-install aware
-  local d="$1"
-  if [ "$d" = "$KIT" ]; then
-    echo "[ok] already in place: $d"
+echo "=== z-container kit installer ($(kit_v "$KIT")) ==="
+echo "  kit source: $KIT"
+echo "  project:    $PROJ"
+[ "$USK" = /home/user_skills ] || echo "  (scratch mode: ZK_USK=$USK — package refresh skipped)"
+
+# ---------------------------------------------------------------- helpers ----
+copy_tree() {  # copy_tree <src-kit> <dest-dir> <preserve-file...>
+  # copy-then-swap; strips VCS metadata; normalizes modes; preserves the
+  # listed files from the OLD destination (e.g. .agents/config, .installed-from)
+  local src="$1" dst="$2"; shift 2
+  local keep=("$@") kept=()
+  if [ "$src" = "$dst" ]; then
+    echo "[ok] already in place: $dst"
     return 0
   fi
-  if ! mkdir -p "$(dirname "$d")" 2>/dev/null; then
-    echo "[skip] $(dirname "$d") not writable"
-    return 0
+  mkdir -p "$(dirname "$dst")" 2>/dev/null || { echo "[skip] $(dirname "$dst") not writable" >&2; return 0; }
+  local sv dv
+  sv="$(kit_v "$src")"; dv="$(kit_v "$dst")"
+  if [ -n "$sv" ] && [ -n "$dv" ] && [ "$sv" != "$dv" ]; then
+    echo "[note] version skew: source=$sv destination($dst)=$dv — installing source version"
   fi
-  # version-skew warning (informational; still installs the source version)
-  if [ -f "$d/SKILL.md" ] && [ -f "$KIT/SKILL.md" ]; then
-    src_v="$(sed -n 's/^  version: "\(.*\)"/\1/p' "$KIT/SKILL.md" | head -1)"
-    dst_v="$(sed -n 's/^  version: "\(.*\)"/\1/p' "$d/SKILL.md" | head -1)"
-    [ "$src_v" = "$dst_v" ] || echo "[note] version skew: source=$src_v destination($d)=$dst_v — installing source version"
-  fi
-  rm -rf "$d.incoming"
-  if cp -r "$KIT" "$d.incoming" 2>/dev/null; then
+  rm -rf "$dst.incoming"
+  if cp -r "$src" "$dst.incoming" 2>/dev/null; then
     # strip VCS metadata: a kit source that is a git CLONE (cold-start path)
-    # carries a .git dir — planted into kit copies it turns them into nested
-    # repos (broken gitlinks / silently-untracked kit files). Kit copies are
-    # plain dirs by design; the workspace repo tracks them from OUTSIDE.
-    rm -rf "$d.incoming/.git"
-    find "$d.incoming" -name .git -exec rm -rf {} + 2>/dev/null
-    # normalize: file modes to 0644 (avoids mode-only git dirt on tracked
-    # copies; scripts run via `bash <script>`, so +x is unneeded); strip
-    # any __pycache__ bytecode cruft
-    find "$d.incoming" -type f -exec chmod 0644 {} + 2>/dev/null
-    find "$d.incoming" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null
-    # OF-10 fix: preserve .installed-from provenance file if the old destination had one.
-    # The kit source (from git clone) doesn't carry .installed-from (it's git-ignored);
-    # without this, every install.sh run silently deletes the provenance, causing
-    # unexplained deletions in the bootstrap checkpoint commit + losing drift-detection data.
-    if [ -f "$d/.installed-from" ]; then
-      cp "$d/.installed-from" "$d.incoming/.installed-from" 2>/dev/null
-    fi
-    rm -rf "$d"
-    if mv -f "$d.incoming" "$d"; then
-      echo "[ok] kit -> $d"
+    # carries .git — planted into kit copies it turns them into nested repos.
+    rm -rf "$dst.incoming/.git"
+    find "$dst.incoming" -name .git -exec rm -rf {} + 2>/dev/null
+    find "$dst.incoming" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null
+    # top-level config NEVER travels with a kit copy (it is per-project state)
+    rm -f "$dst.incoming/config"
+    # normalize: 0644 files (avoids mode-only git dirt; bash scripts run via
+    # `bash <script>` so +x is unneeded — shims/installs set their own modes)
+    find "$dst.incoming" -type f -exec chmod 0644 {} + 2>/dev/null
+    # preserve caller-listed files from the old destination (OF-10 pattern)
+    for k in "${keep[@]}"; do
+      if [ -e "$dst/$k" ]; then
+        mkdir -p "$dst.incoming/$(dirname "$k")" 2>/dev/null
+        cp -a "$dst/$k" "$dst.incoming/$k" 2>/dev/null && kept+=("$k")
+      fi
+    done
+    rm -rf "$dst"
+    if mv -f "$dst.incoming" "$dst" 2>/dev/null; then
+      echo "[ok] kit -> $dst${kept[*]:+ (preserved: ${kept[*]})}"
     else
-      rm -rf "$d.incoming"
-      echo "[warn] could not finalize $d (mv failed — old copy was replaced; re-run install)" >&2
+      rm -rf "$dst.incoming"
+      echo "[warn] could not finalize $dst (mv failed — old copy was replaced; re-run install)" >&2
       INSTALL_FAIL=1
     fi
   else
-    rm -rf "$d.incoming"
-    echo "[warn] copy to $d failed — previous copy (if any) kept" >&2
+    rm -rf "$dst.incoming"
+    echo "[warn] copy to $dst failed — previous copy (if any) kept" >&2
     INSTALL_FAIL=1
   fi
 }
 
-# 1. docs + scripts into the project
-copy_into "$PROJ/skills/z-container"
-
-mkdir -p "$PROJ/scripts"
-for s in resolve-prefix.sh zsave zsession daemonize.py install.sh wdt_watch.py zremote zdoppler-smoke zkit-selftest zcleanup-backups doppler_fetch.py verify_access.py; do
-  if [ -f "$KIT/scripts/$s" ]; then
-    cp -f "$KIT/scripts/$s" "$PROJ/scripts/$s" && chmod 0755 "$PROJ/scripts/$s" || INSTALL_FAIL=1
+# ------------------------------------------------- step 1: .agents/config ----
+# Resolve ZK_PREFIX BEFORE instantiating, so the new .agents/ is born with its
+# config. Priority: existing .agents/config > env var > legacy config.env >
+# git remote basename > interactive prompt (TTY only) > fail loudly.
+CONFIG_SRC=""
+if [ -f "$AGENTS/config" ]; then
+  # shellcheck disable=SC1091
+  . "$AGENTS/config"
+  echo "[ok] .agents/config exists — ZK_PREFIX=${ZK_PREFIX:-?} (will be preserved)"
+  CONFIG_SRC="preserved"
+fi
+if [ "$CONFIG_SRC" = "" ] && [ -z "${ZK_PREFIX:-}" ]; then
+  # legacy migration: exactly one /home/user_skills/*-config.env
+  legacy_configs=$(ls "$USK"/*-config.env 2>/dev/null || true)
+  legacy_count=$(printf '%s\n' "$legacy_configs" | grep -c . 2>/dev/null || true)
+  if [ "${legacy_count:-0}" = "1" ] 2>/dev/null; then
+    # shellcheck disable=SC1090
+    . "$legacy_configs" 2>/dev/null || true
+    [ -n "${ZK_PREFIX:-}" ] && CONFIG_SRC="migrated from $legacy_configs"
   fi
-done
-echo "[ok] helpers -> $PROJ/scripts/ (zsave zsession daemonize.py install.sh wdt_watch.py zremote zdoppler-smoke zkit-selftest)"
-
-# 1b. git-tracked copy at the repo root (download/ is the platform's own
-# deliverables dir; the kit does NOT belong there — v2.2.x legacy copies
-# living at download/z-container-kit are removed below)
-copy_into "$PROJ/z-container-kit"
-
-# 1c. legacy cleanup: v2.2.x installed the git-tracked copy at
-# $PROJ/download/z-container-kit — remove it (git status will show the
-# deletion; the next zsave commits the migration)
-if [ -d "$PROJ/download/z-container-kit" ] && [ "$PROJ/download/z-container-kit" != "$KIT" ]; then
-  rm -rf "$PROJ/download/z-container-kit"
-  echo "[ok] removed legacy kit copy at $PROJ/download/z-container-kit (now lives at $PROJ/z-container-kit)"
+fi
+if [ "$CONFIG_SRC" = "" ] && [ ! -f "$AGENTS/config" ] && [ -z "${ZK_PREFIX:-}" ]; then
+  # derive from the git remote URL basename (true cold start)
+  remote_url="$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)"
+  if [ -n "$remote_url" ]; then
+    derived="$(printf '%s' "$remote_url" \
+      | sed -E 's|^[^:]+://||; s|.*[:/]||; s|\.git$||; y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/' \
+      | tr -dc 'a-z0-9-' | head -c 24)"
+    if [ -n "$derived" ]; then
+      ZK_PREFIX="$derived"
+      CONFIG_SRC="derived from origin URL basename"
+    fi
+  fi
+fi
+if [ "$CONFIG_SRC" = "" ] && [ ! -f "$AGENTS/config" ] && [ -z "${ZK_PREFIX:-}" ]; then
+  # last resort: interactive prompt — ONLY when a TTY exists (agent bash
+  # toolcalls have none; fail loudly instead of hanging)
+  if [ -t 0 ]; then
+    echo
+    echo "  ZK_PREFIX is your project name (lowercase [a-z0-9-], max 24 chars)."
+    echo "  It names credential/snapshot/state files in /home/user_skills/ and /home/sync/."
+    printf "  Enter ZK_PREFIX: "
+    read -r ZK_PREFIX_INPUT || ZK_PREFIX_INPUT=""
+    if [ -n "$ZK_PREFIX_INPUT" ]; then
+      ZK_PREFIX="$ZK_PREFIX_INPUT"
+      CONFIG_SRC="interactive prompt"
+    fi
+  fi
+fi
+if [ ! -f "$AGENTS/config" ]; then
+  if [ -z "${ZK_PREFIX:-}" ]; then
+    echo
+    echo "[fail] ZK_PREFIX unknown and no TTY to prompt. Fix with ONE of:" >&2
+    echo "  (a) ZK_PREFIX=<name> bash $SCRIPT_DIR/install.sh" >&2
+    echo "  (b) git -C $PROJ remote add origin <url>   # derive from URL basename" >&2
+    echo "  (c) echo 'ZK_PREFIX=<name>' > $USK/<name>-config.env   # legacy discovery" >&2
+    echo "  (d) run me from a TTY and answer the prompt" >&2
+    exit 1
+  fi
+  case "$ZK_PREFIX" in
+    *[!a-z0-9-]*|'')
+      echo "[fail] ZK_PREFIX '$ZK_PREFIX' must be lowercase [a-z0-9-] (got invalid chars or empty)" >&2
+      exit 1
+      ;;
+  esac
+  if [ "${#ZK_PREFIX}" -gt 24 ]; then
+    echo "[fail] ZK_PREFIX '$ZK_PREFIX' longer than 24 chars" >&2
+    exit 1
+  fi
 fi
 
-# 2. recycle-safe / cross-chat copies
-copy_into /home/sync/z-container-kit
-copy_into /home/user_skills/z-container-kit
+# ------------------------------------------------- step 2: instantiate ------
+echo "--- step 2: instantiate .agents/ ---"
+mkdir -p "$AGENTS"
+copy_tree "$KIT" "$AGENTS" "config" ".installed-from"
+if [ ! -f "$AGENTS/config" ]; then
+  umask 022
+  printf 'ZK_PREFIX=%s\n' "$ZK_PREFIX" > "$AGENTS/config"
+  chmod 0644 "$AGENTS/config"   # committed, non-secret (project name only)
+  echo "[ok] wrote .agents/config (ZK_PREFIX=$ZK_PREFIX, $CONFIG_SRC)"
+else
+  chmod 0644 "$AGENTS/config" 2>/dev/null || true
+fi
+chmod 0755 "$AGENTS/scripts/"* 2>/dev/null || true
 
-# 3. refresh the portable zip artifact (root "z-container/", matching the
-#    /home/official_skills/<name>.zip skill-package convention). Built in
-#    /tmp from the just-installed copy, moved in atomically. Kit files carry
-#    no tokens by construction — the zip is safe to hand to any session.
-if [ -d /home/user_skills/z-container-kit ]; then
-  ZT="/tmp/.${PREFIX}-zipstage-$$"
+# ------------------------------------------------- step 3: scripts/ ---------
+echo "--- step 3: scripts/ (shims + python copies) ---"
+mkdir -p "$PROJ/scripts"
+SHIM_TEMPLATE='#!/bin/bash
+# %NAME% — shim -> .agents/scripts/%NAME% (kit v3.1)
+# Resolves its own location (works from any cwd; survives repo.tar as a real file).
+TARGET="$(cd "$(dirname "$0")" && pwd)/../.agents/scripts/%NAME%"
+if [ ! -f "$TARGET" ]; then
+  echo "shim error: $TARGET missing — run install.sh from a kit copy" >&2
+  exit 1
+fi
+case "$TARGET" in
+  *.py) exec python3 "$TARGET" "$@" ;;
+  *)    exec bash    "$TARGET" "$@" ;;
+esac
+'
+BASH_HELPERS="zsave zsession zdoppler-smoke zkit-selftest zcleanup-backups zremote install.sh"
+PY_HELPERS="daemonize.py doppler_fetch.py verify_access.py wdt_watch.py"
+made_shims=0; made_copies=0
+for s in $BASH_HELPERS; do
+  [ -f "$AGENTS/scripts/$s" ] || continue
+  printf '%s' "$SHIM_TEMPLATE" | sed "s/%NAME%/$s/g" > "$PROJ/scripts/$s"
+  chmod 0755 "$PROJ/scripts/$s"
+  made_shims=$((made_shims + 1))
+done
+# python helpers + the SOURCED resolve-prefix.sh must be REAL files:
+#   - `python3 scripts/<x>.py` is the documented invocation — a bash shim breaks it
+#   - `source scripts/resolve-prefix.sh` must define functions, never exec
+for s in $PY_HELPERS resolve-prefix.sh; do
+  [ -f "$AGENTS/scripts/$s" ] || continue
+  cp -f "$AGENTS/scripts/$s" "$PROJ/scripts/$s"
+  case "$s" in *.py) chmod 0755 "$PROJ/scripts/$s";; *) chmod 0644 "$PROJ/scripts/$s";; esac
+  made_copies=$((made_copies + 1))
+done
+echo "[ok] scripts/: $made_shims shims (exec -> .agents/scripts/), $made_copies real copies (python/sourced)"
+
+# ------------------------------------------------- step 4: discovery symlink
+echo "--- step 4: skills/z-container discovery symlink ---"
+mkdir -p "$PROJ/skills/z-container"
+ln -sfn ../../.agents/SKILL.md "$PROJ/skills/z-container/SKILL.md"
+echo "[ok] skills/z-container/SKILL.md -> .agents/SKILL.md (platform discovery; git-ignored, recreated by install)"
+
+# ------------------------------------------------- step 5: package refresh --
+# NOTE: guard on $KIT (round-11 F3 fix — the v3.0.1 installer guarded on $PROJ
+# and self-destructed the package when run FROM the package).
+if [ "$LIVE" = 1 ] && [ "$USK" = /home/user_skills ] && [ "$(cd "$KIT" && pwd)" != "$(cd "$PKG" && pwd 2>/dev/null || echo /nonexistent)" ]; then
+  echo "--- step 5: refresh read-only package ---"
+  if [ -d "$USK" ]; then
+    copy_tree "$AGENTS" "$PKG" ".installed-from"
+  fi
+else
+  echo "--- step 5: package refresh skipped (installer IS the package, or scratch ZK_PROJ) ---"
+fi
+
+# portable zip (root "z-container/", the skill-package convention)
+if [ "$LIVE" = 1 ] && [ -d "$PKG" ]; then
+  ZT="/tmp/.zk-zipstage-$$"
   rm -rf "$ZT"; mkdir -p "$ZT"
-  if cp -r /home/user_skills/z-container-kit "$ZT/z-container" 2>/dev/null; then
-    # belt-and-braces: never ship VCS metadata in the portable zip
+  if cp -r "$PKG" "$ZT/z-container" 2>/dev/null; then
     rm -rf "$ZT/z-container/.git"
     find "$ZT/z-container" -name .git -exec rm -rf {} + 2>/dev/null
-  fi
-  if [ -d "$ZT/z-container" ] && (cd "$ZT" && zip -qr z-container.zip z-container) 2>/dev/null \
-     && mv -f "$ZT/z-container.zip" /home/user_skills/z-container.zip 2>/dev/null; then
-    echo "[ok] portable zip -> /home/user_skills/z-container.zip"
-  else
-    echo "[warn] could not refresh /home/user_skills/z-container.zip (previous copy kept)" >&2
+    rm -f "$ZT/z-container/config"
+    if (cd "$ZT" && zip -qr z-container.zip z-container) 2>/dev/null \
+       && mv -f "$ZT/z-container.zip" "$USK/z-container.zip" 2>/dev/null; then
+      echo "[ok] portable zip -> $USK/z-container.zip"
+    else
+      echo "[warn] could not refresh $USK/z-container.zip (previous copy kept)" >&2
+    fi
   fi
   rm -rf "$ZT"
 fi
 
-# add safe.directory exactly once (re-runs used to accumulate duplicates)
+# ------------------------------------------------- step 6: migrations -------
+if [ "$LIVE" = 1 ]; then
+  echo "--- step 6: one-shot migrations ---"
+  # Friction #12: pre-v3.1 zsave wrote PAT-bearing URLs to /home/sync/ where
+  # ossfs ignores chmod (files sat world-readable at 0777). The canonical copy
+  # is /home/user_skills/<prefix>-remote.url (PolarFS, 0600).
+  for f in /home/sync/*-remote.url; do
+    [ -f "$f" ] || continue
+    rm -f "$f" 2>/dev/null && echo "[ok] removed stale $f (mode-0777 PAT-leak fix; canonical copy lives in /home/user_skills/)"
+  done
+  # legacy kit copies from the 4-copy era (v2.x): the repo-root and /home/sync
+  # kit dirs are superseded by .agents/ + the read-only package.
+  for legacy in "$PROJ/z-container-kit" "$PROJ/download/z-container-kit" "/home/sync/z-container-kit"; do
+    if [ -d "$legacy" ] && [ "$(cd "$legacy" && pwd)" != "$(cd "$AGENTS" && pwd)" ]; then
+      rm -rf "$legacy" 2>/dev/null \
+        && echo "[ok] removed legacy kit copy: $legacy (superseded by .agents/ — commit the deletion)" \
+        || echo "[warn] could not remove legacy copy: $legacy (remove manually)" >&2
+    fi
+  done
+fi
+
+# ------------------------------------------------- step 7: git config -------
 git config --global --unset-all safe.directory "$PROJ" 2>/dev/null || true
 git config --global --add safe.directory "$PROJ" 2>/dev/null || true
 
+# ------------------------------------------------- wrap up ------------------
 if [ "$INSTALL_FAIL" = 1 ]; then
   echo
   echo "install.sh: FINISHED WITH FAILURES — see [warn] lines above" >&2
   exit 1
 fi
 echo
-echo "installed. next:"
-echo "  bash $PROJ/scripts/zsession            # situation report"
-echo "  bash $PROJ/scripts/zsave 'msg'         # commit + snapshot + push"
-echo "  cat $PROJ/skills/z-container/SKILL.md  # full survival guide"
+echo "=== install complete ($(kit_v "$AGENTS")) ==="
+echo "  next:"
+echo "    bash $PROJ/scripts/zsession              # situation report"
+echo "    bash $PROJ/scripts/zsave 'msg'           # commit + snapshot + push"
+echo "  commit the kit so it travels with the repo (first time / after upgrade):"
+echo "    git -C $PROJ add .agents/ scripts/ && git -C $PROJ commit -m 'kit: .agents/ v$(kit_v "$AGENTS")'"

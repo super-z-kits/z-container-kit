@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zsave — one-command persistence for the Z container. (kit v2.3.2)
+# zsave — one-command persistence for the Z container. (kit v3.1.0)
 #
 #   0. maintain .git/info/exclude (uploads/logs/build junk stay out of git)
 #      + auto-exclude untracked NESTED git repos (scratch clones would
@@ -7,9 +7,11 @@
 #   1. commit everything (git add -A, including .env — git IS the disk here)
 #   2. push to origin (if configured; failure is a warning, not fatal;
 #      embedded PATs are masked before any stderr is echoed)
-#   2b. after a successful push: refresh ${PREFIX}-remote.url credential files
-#       ($ZK_SYNC + /home/user_skills) so a FRESH chat can re-add origin
-#       even when per-chat /home/sync starts empty
+#   2b. after a successful push: refresh the ${PREFIX}-remote.url credential
+#       file in /home/user_skills (mode 0600, PolarFS) so a FRESH chat can
+#       re-add origin even when per-chat /home/sync starts empty. The
+#       historical /home/sync/ copy is NOT written (ossfs ignores chmod — the
+#       copy sat world-readable at mode 0777; friction #9/#19).
 #   3. snapshot to $ZK_SYNC/${PREFIX}-snapshots/ (keep last N)
 #      - excluded: node_modules/.next/.turbo (ANY depth), upload/, dev.log,
 #        OFFICIAL skills (boot re-extracts them); CUSTOM skills are kept
@@ -26,8 +28,25 @@
 # exit:   0 saved (push failure warns but exits 0); 1 if commit/snapshot/
 #         repo.tar failed; 75 if another zsave holds the lock.
 set -uo pipefail
-# Auto-discover ZK_PREFIX from /home/user_skills/*-config.env (durable — survives recycle)
-source "$(dirname "$0")/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
+# Resolve ZK_PREFIX. Order:
+#   1. $SCRIPT_DIR/../config  — .agents/config of the INSTANTIATED kit
+#      (git-tracked, survives boot — the v3.1 canonical location)
+#   2. resolve-prefix.sh      — package-mode fallback (env var, config.env
+#      glob, durable-artifact scan, remote-URL derivation)
+# When run via the scripts/ shim, $0 -> .agents/scripts/zsave, so ../config
+# resolves to .agents/config. When run from the read-only package, ../config
+# is absent and the fallback chain applies.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+PREFIX=""
+if [ -f "$SCRIPT_DIR/../config" ]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/../config"
+  PREFIX="${ZK_PREFIX:-}"
+fi
+if [ -z "$PREFIX" ]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
+fi
 
 PROJ="${ZK_PROJ:-/home/z/my-project}"
 SYNC="${ZK_SYNC:-/home/sync}"
@@ -39,7 +58,9 @@ TS="$(date -u +%Y%m%d-%H%M%S)"
 FAIL=0
 # token masker for anything echoed into transcripts or written to the state
 # file (PAT-bearing URLs, commit subjects, branch names, git stderr)
-mask() { sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g'; }
+# Friction #20: defense-in-depth — also mask dp.pt.*/dp.st.*/cfat_*/sbp_*
+# (the platform bash redactor only covers ghp_*; this closes the kit-level gap)
+mask() { sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g; s#(dp\.pt\.|dp\.st\.|cfat_|sbp_)[A-Za-z0-9_.-]+#\1***#g'; }
 
 cd "$PROJ" || { echo "zsave: cannot cd to $PROJ" >&2; exit 1; }
 if [ ! -e .git ]; then
@@ -199,8 +220,10 @@ if [ "$PUSHED" = "yes" ]; then
         FAIL=1
       fi
     }
-    write_cred "$SYNC/${PREFIX}-remote.url"
-    # the cross-chat copy only for the live project + real sync dir
+    # Friction #9/#19: write ONLY the /home/user_skills copy (PolarFS, mode
+    # 0600). The old /home/sync/ copy is NOT written — ossfs ignores chmod,
+    # leaving the PAT world-readable at 0777. install.sh removes stale
+    # pre-v3.1 copies as a one-shot migration.
     # (scratch ZK_PROJ/ZK_SYNC test runs must not touch /home/user_skills)
     if [ "$PROJ" = "/home/z/my-project" ] && [ "$SYNC" = "/home/sync" ]; then
       write_cred /home/user_skills/${PREFIX}-remote.url

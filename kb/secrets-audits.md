@@ -4,12 +4,16 @@ F11 (ossfs 0777 mode), F13 (mode-printing), F18 (recovery pre-flight),
 F21 (app secrets → Doppler), F12/F15 (UUID commits).
 Extracted from SKILL.md v2.3.3.
 - **Files under `/home/sync/` come back mode 0777** (audit F11) — ossfs
-  ignores `chmod`. The `${ZK_PREFIX}-remote.url` credential file there is technically
-  world-readable. This is expected on the single-user Super Z container
-  (only user `z` exists) and not a leak in practice; the canonical posture is
-  the mode-0600 copy in `/home/user_skills/${ZK_PREFIX}-remote.url`. `zsave` now prints
-  the file mode in its `[ok] credential file: ... (mode <NNN>, ...)` line so
-  the discrepancy is visible (audit F13).
+  ignores `chmod`. RESOLVED in v3.1 for the credential file: `zsave` no longer
+  writes `${ZK_PREFIX}-remote.url` to `/home/sync/` at all (friction #9/#19);
+  the only copy is the mode-0600 one in
+  `/home/user_skills/${ZK_PREFIX}-remote.url` (PolarFS honors chmod), and
+  install.sh removes stale pre-v3.1 `/home/sync/` copies as a one-shot
+  migration. The 0777 quirk itself remains for any OTHER file you choose to
+  put on `/home/sync/` — treat that mount as world-readable-by-accident and
+  keep secrets off it. `zsave` prints the file mode in its
+  `[ok] credential file: ... (mode <NNN>, ...)` line so discrepancies stay
+  visible (audit F13).
 - **`.env` is committed by design (law 9), but app secrets belong in
   Doppler** (audit F21): the platform-default `DATABASE_URL` and any non-secret
   config are fine in `.env`. But if you add real app secrets to `.env`

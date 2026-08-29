@@ -21,8 +21,18 @@
 # Requires: GH_PAT env var (typically fetched from Doppler per secrets-vault kit).
 
 set -euo pipefail
-# Auto-discover ZK_PREFIX from /home/user_skills/*-config.env (durable — survives recycle)
-source "$(dirname "$0")/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
+# Resolve ZK_PREFIX: .agents/config first (v3.1), then the package-mode fallback.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+PREFIX=""
+if [ -f "$SCRIPT_DIR/../config" ]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/../config"
+  PREFIX="${ZK_PREFIX:-}"
+fi
+if [ -z "$PREFIX" ]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
+fi
 
 # Parse args
 KEEP=0
