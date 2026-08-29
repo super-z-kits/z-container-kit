@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # zsession — Z-container situation report at session start (read-only).
-# (kit v5.0.0) Reports THIS kit and THIS project only — kits are
+# (kit v5.1) Reports THIS kit and THIS project only — kits are
 # self-contained by design; no cross-kit inventory, no artifact scans.
-# /home/user_skills is STATIC during sessions (read-only except the three
+# /home/user_skills is STATIC during sessions (read-only except the
 # sanctioned writes — see SKILL.md); this script writes nothing except its
 # unique .${PREFIX}-rw-$$ rw-probe files (created and removed immediately).
 # Makes no persistent changes: mount checks create+remove one unique
@@ -93,8 +93,8 @@ if [ -f "$SYNC/repo.tar" ]; then
   # UA-1 finding: a repo.tar with NO state for THIS project was written by a
   # DIFFERENT project's zsave — the classic wrong-project boot-restore trap.
   # Prefix-scoped check only (no account scan — kits mind their own business).
-  if [ ! -f "$STATE" ]; then
-    echo "[warn] repo.tar present but no ${PREFIX}-state.env for THIS project — that tar"
+  if [ -z "$PREFIX" ] || [ ! -f "$STATE" ]; then
+    echo "[warn] repo.tar present but no ${PREFIX:-<prefix>}-state.env for THIS project — that tar"
     echo "  belongs to a DIFFERENT project's zsave; a boot restore would bring back the"
     echo "  WRONG project. Recover from YOUR remote/snapshots and ignore that tar."
   fi
@@ -113,28 +113,12 @@ if [ -e "$PROJ/.git" ]; then
   fi
   git -C "$PROJ" status -sb | head -5 | mask
   git -C "$PROJ" log --oneline -3 2>/dev/null | mask || echo "(no commits yet)"
-  # F23 (audit): the kit's own SKILL.md law says "never `git remote -v` in transcript".
-  # The previous version of this line did exactly that (piped through `mask`, which
-  # catches known prefixes, but it's still a violation of the kit's own rule).
-  # Switch to names-only `git remote`, then surface the origin URL via `get-url`
-  # with explicit masking for known token prefixes.
+  # F23 (audit): names-only `git remote`, then the origin URL via `get-url`
+  # with explicit masking for known token prefixes (never `git remote -v`).
   echo "remotes: $(git -C "$PROJ" remote 2>/dev/null | tr '\n' ' ')"
   ORIG_URL="$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)"
   if [ -n "$ORIG_URL" ]; then
     echo "  origin (masked): $(printf '%s' "$ORIG_URL" | mask)"
-  fi
-  # F17 (audit): print what URL the credential file points to (masked) so the
-  # agent can sanity-check it BEFORE doing recovery. Previously, the kit just
-  # said "credential file exists; holds the origin URL — never print it" — but
-  # an agent doing fresh-chat recovery has no way to know whether the URL is
-  # the RIGHT one for this session. Showing the masked URL lets the agent
-  # immediately spot a stale credential file (audit F16/F17 root cause).
-  # Friction #19: only the /home/user_skills copy exists post-v3.1 (mode 0600,
-  # PolarFS). The /home/sync copy is not written anymore (ossfs 0777 hazard).
-  if [ "$LIVE" = 1 ] && [ -s "$USK/${PREFIX}-remote.url" ]; then
-    CF_URL="$(cat "$USK/${PREFIX}-remote.url" 2>/dev/null || true)"
-    echo "credential file: $USK/${PREFIX}-remote.url"
-    echo "  → $(printf '%s' "$CF_URL" | mask)"
   fi
   WT="$(git -C "$PROJ" worktree list 2>/dev/null | tail -n +2 | mask)"
   if [ -n "$WT" ]; then echo "worktrees:"; echo "$WT"; else echo "worktrees: none"; fi
@@ -187,7 +171,8 @@ fi
 line "kit & config"
 # kit v4.1 zero-install model: ONE canonical package per account + a tiny
 # per-project config (.agents/config — the .env pattern). No per-project
-# kit copies exist; v3 leftovers are reported, not migrated silently.
+# kit copies exist; v3-era leftovers are harmless dead files (helpers never
+# read them) — remove by hand if they bother you.
 if [ -f "$USK/z-container-kit/SKILL.md" ]; then
   echo "canonical kit: $USK/z-container-kit (v$(sed -n 's/^  version: "\(.*\)"/\1/p' "$USK/z-container-kit/SKILL.md" 2>/dev/null | head -1))"
 elif [ -f "$SCRIPT_DIR/../SKILL.md" ]; then
@@ -209,16 +194,17 @@ if [ -n "$PREFIX" ]; then
   echo "project config: $PROJ/.agents/config (ZK_PREFIX=$PREFIX)"
 else
   echo "project config: MISSING — initialize: bash $SCRIPT_DIR/zk-init <name>"
+  [ -f "$USK/zk-default.env" ] && echo "  account default set: bash $SCRIPT_DIR/zk-init --default   (discovers + wires it)"
 fi
-# old-kit leftovers in THIS project only (harmless: v4 helpers never read them)
-V3LEFT=""
-for p in SKILL.md reference.md README.md scripts kb evidence; do
-  [ -e "$PROJ/.agents/$p" ] && V3LEFT="$V3LEFT .agents/$p"
-done
-[ -e "$PROJ/skills/z-container" ] && V3LEFT="$V3LEFT skills/z-container"
-[ -e "$PROJ/z-container-kit" ] && V3LEFT="$V3LEFT z-container-kit(v2 copy)"
-if [ -n "$V3LEFT" ]; then
-  echo "old kit leftovers (harmless; strip with: bash $SCRIPT_DIR/zk-init --migrate-v3):$V3LEFT"
+# account default (read-only report — the opt-in single-project binding)
+if [ -f "$USK/zk-default.env" ]; then
+  DP="$(sed -n 's/^ZK_DEFAULT_PREFIX=//p' "$USK/zk-default.env" 2>/dev/null | head -1 | tr -d "\"'" || true)"
+  DR="$(sed -n 's/^ZK_DEFAULT_REMOTE=//p' "$USK/zk-default.env" 2>/dev/null | head -1 | tr -d '"' || true)"
+  echo "account default: $USK/zk-default.env (prefix=${DP:-?})"
+  echo "  remote (masked): $(printf '%s' "$DR" | mask)"
+  if [ -z "$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)" ]; then
+    echo "  -> no origin wired here: bash $SCRIPT_DIR/zk-init --default applies it (single-project accounts)"
+  fi
 fi
 
 line "services"
@@ -241,7 +227,7 @@ COLD=0
 if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
   COLD=1
   KITSRC=""
-  for p in /home/user_skills/z-container-kit "$SYNC/z-container-kit" "$PROJ/z-container-kit"; do
+  for p in "$USK/z-container-kit" "$SYNC/z-container-kit" "$PROJ/z-container-kit"; do
     [ -f "$p/scripts/zsave" ] && { KITSRC="$p"; break; }
   done
   echo "COLD START detected (no remote, no zsave state). Exact sequence:"
@@ -251,29 +237,28 @@ if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origi
     echo "  0. git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit"
     echo "     (helpers run straight from the clone — nothing to install)"
   fi
-  # multi-repo aware: list EVERY credential file, let the agent pick ITS project's
-  NCF=0
-  for cf in "$USK"/*-remote.url; do
-    [ -s "$cf" ] || continue
-    NCF=$((NCF+1))
-    CF_URL="$(cat "$cf" 2>/dev/null || true)"
-    echo "  1. credential file found: $cf -> $(printf '%s' "$CF_URL" | mask)"
-  done
-  if [ "$NCF" = 0 ]; then
-    echo "  1. git -C $PROJ remote add origin https://<PAT>@github.com/<user>/<repo>.git  # ask the user if no PAT"
-  elif [ "$NCF" -gt 1 ]; then
-    echo "     ^ multiple credential files = multiple projects on this account —"
-    echo "     pick THIS session's project by its prefix (filename before -remote.url)"
+  # 1. remote — account default first (opt-in single-project binding), else
+  #    user-provided PAT / Doppler-vault PT (secrets-vault-kit Path C)
+  if [ -f "$USK/zk-default.env" ]; then
+    DP="$(sed -n 's/^ZK_DEFAULT_PREFIX=//p' "$USK/zk-default.env" 2>/dev/null | head -1 | tr -d "\"'" || true)"
+    DR="$(sed -n 's/^ZK_DEFAULT_REMOTE=//p' "$USK/zk-default.env" 2>/dev/null | head -1 | tr -d '"' || true)"
+    echo "  1. account default SET (prefix=${DP:-?}): bash ${KITSRC:-/tmp/my-project/kit}/scripts/zk-init --default"
+    echo "     (writes config + wires origin + fetches + REVEALS which project came back —"
+    echo "      single-project accounts only; if the revealed commits are the WRONG"
+    echo "      project, this is a multi-repo account: undo and state your project)"
+    echo "     remote (masked): $(printf '%s' "$DR" | mask)"
+  else
+    echo "  1. no account default — wire the remote for THIS chat's project:"
+    echo "     git -C $PROJ remote add origin https://<PAT>@github.com/<user>/<repo>.git"
+    echo "     (no PAT? Doppler vault may hold GH_PAT — secrets-vault-kit 'Path C'; else ask the user)"
   fi
-  echo "  2. git -C $PROJ remote add origin \"\$(cat <your-credential-file>)\"   # empty dir? git -C $PROJ init -b main first"
-  echo "     git -C $PROJ fetch origin"
+  echo "  2. git -C $PROJ fetch origin   # empty dir? git -C $PROJ init -b main first"
   echo "     git -C $PROJ log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK before reset (F18)"
   echo "     git -C $PROJ reset --hard origin/main   # empty remote? skip"
   echo "  3. project identity comes back WITH the repo (.agents/config is committed):"
   echo "     source $PROJ/.agents/config && echo \$ZK_PREFIX   # verify — if absent (NEW project, not a recovery):"
-  echo "     bash ${KITSRC:-/tmp/my-project/kit}/scripts/zk-init <name>"
-  echo "     RECOVERY: never invent a name — REUSE the prefix from the credential"
-  echo "     filename you wired in step 2 (the part before -remote.url)"
+  echo "     bash ${KITSRC:-/tmp/my-project/kit}/scripts/zk-init <name>   # in a RECOVERY reuse the project's"
+  echo "     existing name (worklog/git history say it) — never invent one"
   echo "  4. bash ${KITSRC:-/tmp/my-project/kit}/scripts/zsave 'fresh-chat bootstrap checkpoint'"
   echo
 fi
@@ -282,16 +267,14 @@ if [ ! -e "$PROJ/.git" ]; then
   rec "no repo — clone your remote into $PROJ or see 'Restore procedures' in SKILL.md"
 fi
 if [ "$COLD" != 1 ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
-  CRED=""
-  [ "$LIVE" = 1 ] && [ -s "$USK/${PREFIX}-remote.url" ] && CRED="$USK/${PREFIX}-remote.url"
-  if [ -n "$CRED" ]; then
-    rec "recover remote: git -C $PROJ remote add origin \"\$(cat $CRED)\"  (credential file found: $CRED)"
+  if [ -f "$USK/zk-default.env" ]; then
+    rec "add remote from the account default: bash $SCRIPT_DIR/zk-init --default  (wires origin + reveals the project)"
   else
     rec "add remote: git -C $PROJ remote add origin https://<PAT>@github.com/<user>/<repo>.git (github = only cross-chat persistence)"
   fi
 fi
 if [ -z "$PREFIX" ] && [ "$COLD" != 1 ]; then
-  rec "no project identity — initialize: bash $SCRIPT_DIR/zk-init <name>  (NEW project; in a RECOVERY reuse the credential-file prefix, never invent one)"
+  rec "no project identity — initialize: bash $SCRIPT_DIR/zk-init <name>  (NEW project; in a RECOVERY the name returns with the repo — never invent one)"
 fi
 if [ -n "$(git -C "$PROJ" status --porcelain 2>/dev/null)" ]; then
   rec "dirty tree — checkpoint: bash $SCRIPT_DIR/zsave 'session-start checkpoint' (commits ALL current state incl. .env)"

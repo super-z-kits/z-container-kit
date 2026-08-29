@@ -12,6 +12,10 @@ user rotates it after the session. If a flow seems to need a stored seed,
 use the seed/worker split from `SKILL-DEPLOY.md` with the seed held by the
 user, not the vault.
 
-**Don't auto-rotate or auto-delete an encountered seed** — it's the user's credential. Flag it to the user and ask:
+**Don't auto-rotate or auto-delete an encountered seed** — it's the user's
+credential. Flag it to the user and ask: (detection recipe lives in SKILL.md's
+DOPPLER_TOKEN_SEED callout; the smoke tool is now at
+`bash /home/user_skills/secrets-vault-kit/scripts/zdoppler-smoke` — v5.1
+moved it to the Doppler kit)
 - If it's the seed for minting STs (per `SKILL-DEPLOY.md` seed/worker split), document its purpose explicitly in the project description.
 - If it's a stray PT left from a prior workflow, recommend the user delete it from Doppler via the dashboard and rotate.

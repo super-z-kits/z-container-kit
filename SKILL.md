@@ -2,21 +2,27 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "5.0.0"
-  verified: "2026-08-30 (live experiments + 14 validation rounds; see evidence/EXPERIMENTS.md)"
+  version: "5.1.0"
+  verified: "2026-08-30 (live experiments + 15 validation rounds; see evidence/EXPERIMENTS.md)"
   description: >
     Survival guide for the sandbox container. ZERO-INSTALL: the kit lives
     once per account at /home/user_skills/z-container-kit/ (scripts run
     straight from there); each project carries only a one-line identity
-    file (.agents/config — ZK_PREFIX, the .env pattern, git-tracked). Verified
-    mechanics of the Git HEAD watchdog (a `git switch main` prelude that runs
-    before EVERY toolcall), the persistence model (overlay vs PolarFS vs
-    ossfs vs github; repo.tar restore semantics), background-process
-    survival (double-fork, mini-services, .zscripts/dev.sh), the irreversible
+    file (.agents/config — ZK_PREFIX, the .env pattern, git-tracked), and
+    an OPT-IN account default (zk-default.env) can bind single-project
+    accounts to one remote so fresh chats bootstrap with zero input
+    (zk-init --default discovers + wires + reveals it). Verified mechanics
+    of the Git HEAD watchdog (a `git switch main` prelude that runs before
+    EVERY toolcall), the persistence model (overlay vs PolarFS vs ossfs vs
+    github; repo.tar restore semantics — the origin remote travels INSIDE
+    the repo, no sidecar credential files), background-process survival
+    (double-fork, mini-services, .zscripts/dev.sh), the irreversible
     terminal lockout hazard, ports/networking, secrets practice, and the
-    zsave/zsession helpers. Load BEFORE any git operation, before any
-    "save my work" decision, before starting any background process, when
-    troubleshooting "my project reset itself", and at every session start.
+    zsave/zsession helpers (six scripts, each earning its existence —
+    everything else is documented one-liners). Load BEFORE any git
+    operation, before any "save my work" decision, before starting any
+    background process, when troubleshooting "my project reset itself",
+    and at every session start.
 ---
 
 # Z-Container Survival Guide v4
@@ -34,106 +40,90 @@ modules in `kb/` (read when the specific topic is relevant).
 
 ## New session — read this every time (MUST READ, inline, not optional)
 
-First, decide which of the two flows you are in — they are different, and
-picking the wrong one wastes work or damages config:
+**ONE flow** — setup and recovery are the same checklist now that nothing
+installs: ensure identity → ensure remote → restore what exists → save. A
+brand-new repo simply skips the restore step; an existing repo gets its
+identity back with the code. You cannot pick the "wrong flow" anymore —
+every step is guarded (zk-init refuses to overwrite an existing identity;
+`reset --hard` runs only after you have SEEN the remote's commits).
 
-- **Existing project** — this repo already uses the kit: an `.agents/`
-  directory is in the workspace (or restores from the backup repo). You are
-  RESTORING a session. This section is your flow.
-- **New project** — the repo has never used the kit: no `.agents/` anywhere,
-  and the backup repo has nothing to restore. You are SETTING UP. Go to
-  "New project setup" near the end instead.
+**0. Pin the save habit NOW** — add this as the FIRST item of your todo
+list, marked STICKY, and never mark it done:
 
-Check: `ls /home/z/my-project/.agents` — present means restore (below);
-absent with no backup-repo history means setup. Do not run the setup flow on
-an existing project (it can bake the wrong `ZK_PREFIX`), and do not run
-recovery on a brand-new repo (the remote has nothing to restore).
+> `zsave after every micro milestone — never mark done`
 
-**1. Run the situation report:**
+(zsave = commit + push + snapshot in one command — see "Saving work".
+"Micro milestone" means exactly that: one file written, one bug fixed, one
+step verified. The grand-final save never happens; everything since your
+last zsave is one recycle away from oblivion.)
+
+**1. Run the situation report** (read-only; plain-git equivalents are
+documented in this file if you prefer):
 ```bash
 bash /home/user_skills/z-container-kit/scripts/zsession
 ```
-Read-only report: uptime, mount writability, recycle detection, git status/remote/
-worktrees, watchdog hygiene, kit & config (canonical kit, project config, old
-leftovers in THIS project), services, numbered recommended actions. It reports
-this kit and this project only — kits are self-contained, no cross-kit
-inventory. One command instead of ~8 improvised ones; the equivalent checks
-are documented in this file if you prefer plain git. Follow its advice. (If the canonical kit is absent — bare account —
-clone it first: `git clone https://github.com/super-z-kits/z-container-kit.git
+It reports: uptime, mount writability, recycle detection, git
+status/remote/worktrees, watchdog hygiene, kit & config status (incl. the
+account default), services, and numbered recommended actions. Follow its
+advice. (If the canonical kit is absent — a truly bare account — clone it
+first: `git clone https://github.com/super-z-kits/z-container-kit.git
 /tmp/my-project/kit` and run the scripts from there; there is nothing to
-install.) Fresh-chat recovery detail (paths A/B/C, credential-file shortcut,
-branch-rename, env-override testing): `kb/session-recovery.md`.
+install.)
 
-**2. Verify you're on `main` (watchdog hygiene):**
+**2. Ensure identity + remote** — in this order:
+- `.agents/config` present in the workspace → identity came back with the
+  repo: `source /home/z/my-project/.agents/config && echo "$ZK_PREFIX"`
+  (each bash toolcall is a fresh subshell — source before using `${ZK_PREFIX}`).
+- `git remote` shows `origin` → the remote came back with the repo too. The
+  URL+PAT live in `.git/config`, which travels INSIDE repo.tar, snapshots,
+  and github — there is no sidecar credential file and none is needed.
+- NEITHER, but an **account default** exists (`/home/user_skills/zk-default.env`,
+  reported by zsession): run the discovery bootstrap —
+  `bash /home/user_skills/z-container-kit/scripts/zk-init --default` —
+  it writes the config, wires origin, fetches, and LOUDLY reveals which
+  project the account is bound to (masked log of origin/main). Right
+  project → continue at step 3. WRONG project → this is really a
+  multi-repo account: undo (remove origin + config) and initialize
+  explicitly with a user-provided remote.
+- NEITHER, no default: `bash …/zk-init <name>` (lowercase [a-z0-9-], ≤24
+  chars, unique among the account's projects), then wire the remote
+  yourself — PAT from the user, or from the Doppler vault (secrets-vault-kit
+  "Vault-sourced GitHub bootstrap"):
+  `git remote add origin https://<PAT>@github.com/<u>/<r>.git`.
+  A single-project account can make this a one-time setup:
+  `zk-init --set-default` snapshots prefix+remote into the account default.
+
+**3. Restore if there is anything to restore** (skip on a brand-new repo):
+```bash
+git -C /home/z/my-project fetch origin
+git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK — are these YOUR commits?
+git -C /home/z/my-project reset --hard origin/main     # brings code + .agents/config + worklog back (empty remote? skip)
+tail -80 /home/z/my-project/worklog.md                 # prior-session context (use tail/offset — the file can be 30+ KB)
+```
+Never reset before the sanity-check log line — a wrong remote means the
+reset would overwrite your working tree with a stranger's repo. If the
+worklog is missing but git history has it, recover it:
+`git log --all --oneline -- worklog.md`, then
+`git show <last-commit-that-had-it>:worklog.md > worklog.md` — do NOT start
+a blank file while history still has the content. Brand-new repo (no
+worklog anywhere): create it per the preset's worklog protocol (append-only,
+sections starting `---`, Task ID / Agent / Task / Work Log / Stage Summary).
+
+**4. Verify you're on `main` (watchdog hygiene):**
 ```bash
 git -C /home/z/my-project branch --show-current   # must say "main"
 ```
-If it says anything else, the watchdog silently reverts your files on the next
+Anything else and the watchdog silently reverts your files on the next
 toolcall. Switch back: `git -C /home/z/my-project switch main`.
 
-**3. If the workspace was already restored** (repo.tar existed at boot, or
-zsession shows your real project history): read the prior session context —
-```bash
-tail -80 /home/z/my-project/worklog.md
-```
-The worklog is committed (survives cross-chat). If it is missing, recover it
-from git history before recreating it: `git log --all --oneline -- worklog.md`,
-then `git show <last-commit-that-had-it>:worklog.md > worklog.md` — do NOT
-start a blank file if history still has the content. If there is truly no
-prior worklog (brand-new repo), create it following the preset's worklog
-protocol (append-only, sections starting `---`, Task ID / Agent / Task /
-Work Log / Stage Summary).
+**5. Checkpoint and go:** `bash /home/user_skills/z-container-kit/scripts/zsave
+"fresh-chat bootstrap checkpoint"` — then get to work, zsave at every micro
+milestone (the sticky todo), and before risky operations.
 
-**4. If the workspace is the boot template** (single "Initial commit", no
-worklog, empty project tree) — cold start. Wire the remote, restore, verify
-identity, save. There is NO install step: the project's `.agents/config` is
-committed, so `reset --hard` brings identity back with the code:
+Recovery deep-dive (paths, branch-rename, pre-flight snapshot):
+`kb/session-recovery.md`. That's the mandatory part — everything below is
+reference, read sections when the topic is relevant.
 
-```
-KIT=/home/user_skills/z-container-kit                 # canonical (or a fresh clone if absent)
-git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git
-git -C /home/z/my-project fetch origin
-git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK (brand-new/empty remote? origin/main doesn't exist yet — expected, move on)
-git -C /home/z/my-project reset --hard origin/main     # skip if remote is empty/new
-source /home/z/my-project/.agents/config && echo "$ZK_PREFIX"   # identity came back with the repo — if absent (repo predates the kit): bash "$KIT/scripts/zk-init" <name>
-# RECOVERY: never invent a name — REUSE the prefix from the credential filename (the part before -remote.url)
-bash "$KIT/scripts/zsave" "fresh-chat bootstrap checkpoint"
-```
-
-After recovery `ZK_PREFIX` lives in `/home/z/my-project/.agents/config` —
-read it with `source /home/z/my-project/.agents/config` before using
-`${ZK_PREFIX}` anywhere in your shell (each bash toolcall is a fresh subshell).
-
-PAT is typed exactly once (the remote-add line). The kit comes from the
-canonical per-account copy; a bare account clones the public repo once (no
-PAT needed for the clone). Alternatives for the remote-add step:
-
-- **B1 — credential file survived** (Path B's credential-file shortcut): list
-  them with `ls /home/user_skills/*-remote.url` — there is ONE PER PROJECT on
-  multi-repo accounts (the prefix is the filename part before `-remote.url`);
-  pick YOUR project's, `${ZK_PREFIX}` is not defined in your shell yet:
-  ```bash
-  CF=/home/user_skills/<your-prefix>-remote.url     # pick YOUR project's file
-  git -C /home/z/my-project remote add origin "$(cat "$CF")"
-  ```
-  Still run the sanity-check log line — a stale credential file (audit F16)
-  can silently point at a different repo.
-- **B2 — no PAT, no credential file, but Doppler vault has GH_PAT** (Path C,
-  see secrets-vault-kit): fetch GH_PAT from the vault via the M7 staging
-  pattern, then `git remote add origin "https://${GH_PAT}@github.com/<user>/<repo>.git"`.
-- **B3 — nothing**: ask the user for the PAT, then `git remote add origin
-  https://<PAT>@github.com/<u>/<r>.git`.
-
-**After recovery (OF-8):** read the **tail** of `/home/z/my-project/worklog.md`
-(last Task ID block — the file can be 30+ KB / 900+ lines, too large for one
-Read; use `tail -100 worklog.md` or `Read` with offset to get the latest
-session context). The worklog re-appears after `reset --hard origin/main` —
-it's not visible before the reset because the workspace is the boot template.
-zsession's "create worklog" rec is stale once recovery completes (the worklog
-already exists); ignore that rec if the file is present and non-empty.
-
-That's the mandatory part. Everything below is reference — read sections when
-the topic is relevant.
 
 ## Rules you never break
 
@@ -143,7 +133,24 @@ the same ground, the rule carries the detail and the law points back.
 
 1. **Stay on `main` in `/home/z/my-project` — the watchdog silently reverts your files.** Before every toolcall, the platform runs `git switch main`. If you're on another branch with a clean tree, your working files silently revert to main on the next toolcall — you won't know until you try to find your work. **Never `git checkout <branch>` inside `/home/z/my-project`.** For branch work, use a worktree: `git -C /home/z/my-project worktree add /tmp/my-project/worktrees/<name> -b feature/<x>`. For PRs, push without checkout: `git push origin main:feature/<x>`.
 
-2. **`zsave` after every MICRO-milestone — and "milestone" means as micro as it gets.** A milestone is NOT "when the feature is done" — that grand final moment never arrives. It is every good moment: one file written, one bug fixed, one step verified, one experiment that worked. Save at that granularity. `zsave` covers all 4 backup layers in one command: (1) commit to local git, (2) push to GitHub (the only cross-chat persistence), (3) snapshot tar to `/home/sync/${ZK_PREFIX}-snapshots/` (per-chat, survives recycle + force-kill), (4) refresh `/home/sync/repo.tar` (the boot-restore artifact — a force-killed container comes back at your latest zsave). It is multi-track-safe by construction: concurrent saves serialize on a lock (the second one WAITS, nothing for you to do), a rejected push (a parallel session pushed first) auto-recovers via `pull --rebase` + retry, and a steady-state save writes `/home/user_skills` zero times (static rule). It also refreshes the `${ZK_PREFIX}-remote.url` credential file — atomically, and only when its bytes actually changed. **Pushed = saved across all layers; unpushed = at risk in ALL layers.** Run at every micro-milestone, before risky operations, and every ~10 toolcalls.
+2. **`zsave` after every micro milestone — and pin it.** Add this as the
+FIRST item of your todo list, marked STICKY, never mark it done:
+"zsave after every micro milestone". A milestone is NOT "when the feature
+is done" — that grand final moment never arrives. It is every good moment:
+one file written, one bug fixed, one step verified, one experiment that
+worked. Save at that granularity. `zsave` covers all 4 backup layers in
+one command: (1) commit to local git, (2) push to GitHub (the only
+cross-chat persistence), (3) snapshot tar to
+`/home/sync/${ZK_PREFIX}-snapshots/` (per-chat, survives recycle +
+force-kill), (4) refresh `/home/sync/repo.tar` (the boot-restore artifact
+— a force-killed container comes back at your latest zsave). It is
+multi-track-safe by construction: concurrent saves serialize on a lock
+(the second one WAITS, nothing for you to do), a rejected push (a parallel
+session pushed first) auto-recovers via `pull --rebase` + retry, and it
+writes `/home/user_skills` ZERO times (static rule). **Pushed = saved
+across all layers; unpushed = at risk in ALL layers.** Run at every micro
+milestone, before risky operations, and every ~10 toolcalls.
+
 
 3. **Never force push.** Local state can be faulty (watchdog reverts, workspace wipes, wrong work dir). `git push --force` overwrites the only copy with your possibly-broken local — the most deadly combination. If push is rejected, `git pull --rebase origin main` and re-push. Never `--force` without explicit user permission.
 
@@ -174,19 +181,25 @@ That is exactly why v5 makes it **static**:
 
 - **Sessions never write `/home/user_skills` except the sanctioned list below.**
   Steady-state saves touch it ZERO times. Nothing races because nothing writes.
-- **The three sanctioned writes** (each zero-collision by construction):
+- **The sanctioned writes** (each zero-collision by construction):
   1. kit install/refresh — `refresh.sh`, a conscious account-level operation:
      per-run staging + rename-aside swap (two atomic directory renames — a
      concurrent session never sees a torn kit; worst case one racing command
      errors once and works on re-run). refresh.sh also owns account-level
-     housekeeping (stale-artifact cleanup + the backup-dir prune folded in
-     from the deleted zcleanup-backups script);
+     housekeeping (stale-artifact cleanup, obsolete pre-v5.1 credential-file
+     removal, and the backup-dir prune folded in from the deleted
+     zcleanup-backups script);
   2. the portable kit zip rebuild — only when missing, same bytes from a
      static source, atomic swap (platform glue: sub-agent spawn consumes it);
-  3. credential files (`${ZK_PREFIX}-remote.url`, `${ZK_PREFIX}-doppler.env`) —
-     keyed by the project's unique prefix, written atomically, and only when
-     the bytes actually change. Doppler env files additionally honor
-     fresher-wins: never clobber a NEWER `DOPPLER_PT_STORED_AT` with older data.
+  3. credential placements keyed by a unique project prefix — in practice
+     secrets-vault-kit's `${ZK_PREFIX}-doppler.env` (atomic, fresher-wins;
+     see that kit's fact #4). v5.1 DELETED the `${ZK_PREFIX}-remote.url`
+     files: the origin URL travels inside the repo (`.git/config` in
+     repo.tar/snapshots/github), so there is nothing per-save to write;
+  4. the account default `zk-default.env` — a single fixed filename, written
+     ONLY by the explicit `zk-init --set-default` (a conscious act, atomic
+     tmp+mv, mode 0600). Racing set-defaults are both user-directed; last
+     whole-file write wins, never a torn file.
 - **Same-repo parallel sessions are git's problem — and git solves it.** Both
   sessions push to one remote; the loser's push is rejected; zsave
   auto-recovers ONCE via `git pull --rebase` + retry (never force-push). Only
@@ -195,6 +208,7 @@ That is exactly why v5 makes it **static**:
   save WAITS (up to `ZK_LOCK_WAIT`, default 180s), it does not fail.
 
 Full hazard analysis: `kb/parallel-sessions.md`.
+
 
 ## The Git HEAD watchdog — read before ANY git work
 
@@ -236,22 +250,36 @@ an in-progress rebase; resolve, `git rebase --continue`, and save again.
 bash /home/user_skills/z-container-kit/scripts/zsave "<what you just finished>"
 ```
 
-Does, in order: maintain `.git/info/exclude` → `git add -A` + commit (incl. `.env`
-— law 9) → push `origin HEAD:<branch>` — a REJECTED push (parallel session
-pushed first) auto-recovers once via `git pull --rebase` + retry; never
-force-pushes → refresh the `${ZK_PREFIX}-remote.url` credential file in
-`/home/user_skills/` atomically, ONLY when its bytes changed (static rule) → tar
-snapshot to `/home/sync/${PREFIX}-snapshots/` (keep 5) → refresh
-`/home/sync/repo.tar` (the boot-restore artifact) → write `${PREFIX}-state.env`
-(recycle detector). Each step degrades gracefully; nonzero exit = commit/snapshot/
-repo.tar failed, or the credential-file write did not verify (F16) (push failure is a
-warning). Full pipeline with exclude rules: `kb/zsave-internals.md`.
+Does, in order: maintain `.git/info/exclude` + guard nested git repos →
+`git add -A` + commit (incl. `.env` — law 9) → push `origin HEAD:<branch>` —
+a REJECTED push (parallel session pushed first) auto-recovers once via
+`git pull --rebase` + retry; never force-pushes → tar snapshot to
+`/home/sync/${PREFIX}-snapshots/` (keep 5) → refresh `/home/sync/repo.tar`
+(the boot-restore artifact) → write `${PREFIX}-state.env` (recycle
+detector) → rebuild the portable zip if the platform consumed it. Each step
+degrades gracefully; nonzero exit = commit/snapshot/repo.tar failed (push
+failure is a warning). zsave writes `/home/user_skills` ZERO times in
+steady state. Full pipeline with exclude rules: `kb/zsave-internals.md`.
 
-Run after every micro-milestone — every good moment: a file finished, a step
-verified, a bug fixed — before risky operations, and at least every ~10
-toolcalls in long sessions. It is cheap (a few seconds). Do NOT wait for a
-"big enough" moment: the grand final save never happens, and everything
-since your last zsave is one recycle away from oblivion.
+Run after every micro milestone — every good moment: a file finished, a
+step verified, a bug fixed — before risky operations, and at least every
+~10 toolcalls in long sessions. It is cheap (a few seconds). Do NOT wait
+for a "big enough" moment: the grand final save never happens, and
+everything since your last zsave is one recycle away from oblivion.
+
+**Why a script and not a one-liner?** It is, mostly, a one-liner — the
+script exists for the parts agents reliably get wrong mid-task: atomic
+tar swaps on ossfs, the auto-rebase recovery on push rejection (multi-track
+same-repo), PAT masking in git stderr, the nested-git-repo gitlink trap,
+snapshot pruning, and the lock. The honest zero-script equivalent, good
+enough in an emergency (kit absent, scripts broken — never stop your real
+job to repair tooling):
+
+```bash
+git add -A && git commit -m "checkpoint" && git push    # the cross-chat layer
+tar -C /home/z/my-project --exclude=node_modules --exclude=.next \
+    -cf /home/sync/repo.tar .                           # the force-kill layer
+```
 
 **Concurrency:** zsave takes a per-container lock (`/tmp/.zsave.lock`) — a
 second concurrent run WAITS for it (default up to 180s) and then proceeds, so
@@ -259,6 +287,7 @@ back-to-back saves serialize with zero intervention. **Sub-agents still
 leave saves to the coordinating agent** — one writer keeps saves from
 interleaving with the coordinator's own git work. Pushing from a worktree is
 always fine.
+
 
 ## repo.tar mechanics
 
@@ -350,15 +379,20 @@ protect the main session.
   `git remote add origin https://<PAT>@github.com/<user>/<repo>.git`.
 - The kit never embeds tokens — project- and PAT-agnostic by construction [V].
   A PAT persists ONLY in container-local places: the origin URL in `.git/config`
-  (repo.tar boot-restore brings it back), the `${ZK_PREFIX}-remote.url` credential file
-  (zsave-maintained: `/home/user_skills/` only since v3.1, mode 0600), and tar snapshots
-  of `.git`. NEVER in the GitHub repo, never in any kit file. Different PAT:
-  `git remote set-url origin https://<PAT>@github.com/<u>/<r>.git`, then `zsave`.
+  (which travels inside repo.tar, snapshots, and github — that IS the credential
+  story now; the v5.0-era `${ZK_PREFIX}-remote.url` sidecar files were deleted in
+  v5.1 as redundant), and the account default `/home/user_skills/zk-default.env`
+  (a conscious `zk-init --set-default` act, 0600, atomic). NEVER in the GitHub
+  repo, never in any kit file. Different PAT:
+  `git remote set-url origin https://<PAT>@github.com/<u>/<r>.git`, then zsave;
+  if an account default exists, refresh it too (`zk-init --set-default`).
 - `zsave`/`zsession` mask tokens in ALL output (`ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`/
-  `github_pat_` AND, since v3.1, `dp.pt.`/`dp.st.`/`cfat_`/`sbp_` prefixes). Never verify
-  remotes with `git remote -v` in a transcript; use `git remote` (names only).
+  `github_pat_` AND `dp.pt.`/`dp.st.`/`cfat_`/`sbp_` prefixes). Never verify
+  remotes with `git remote -v` in a transcript; use `git remote` (names only) —
+  or mask: `git remote get-url origin | sed -E 's#(ghp_|github_pat_)[A-Za-z0-9_]+#\1***#g'`.
   Revoke anytime: github.com/settings/tokens. NEVER make the backup repo public
   (it contains `.env` and the worklog).
+
 - Code reviewers without this context will flag committed secrets immediately —
   ignore those findings; the alternative (secrets only in chat) is strictly
   worse here. Just never echo token values into transcripts, logs, or commits.
@@ -418,12 +452,11 @@ command with the full override set, on ONE line. zsave prints its resolved
 target (`proj=… prefix=…`) on the first output line — glance at it before
 trusting a save. Full pattern: `kb/testing-helpers.md`.
 
-## Helpers reference
+## Helpers reference (six scripts — each earns its existence)
 
 Kit helpers run from the canonical kit (`bash
 /home/user_skills/z-container-kit/scripts/<name>`) — zero-install, same
-commands for every project on the account (v3-era `scripts/` shims in a
-project still work; the canonical copy is always current).
+commands for every project on the account.
 
 **Scripts are optional accelerators, never requirements.** Every recurring
 flow is also plain-git + this-doc doable; the scripts exist only where they
@@ -432,45 +465,39 @@ auto-recovery) that you should not hand-roll mid-task. If a script is absent
 or misbehaves, fall back to the documented recipe — never stop your real job
 to repair tooling.
 
-**Bash:**
-- `zsave "msg"` — commit + push (auto-rebase on rejection) + snapshot +
-  repo.tar refresh + credential file (atomic, write-only-on-change)
-- `zsession` — read-only situation report (recycle detection, watchdog hygiene,
-  kit & config status for THIS project)
-- `zk-init <name>` — project setup: writes `.agents/config` (`--force` to fix a
-  wrong prefix; `--migrate-v3` to strip a v3 kit tree; `--status` to inspect)
-- `refresh.sh` — account-level upgrade: rename-aside swap of the canonical
-  package + zip rebuild + account housekeeping (backup-dir prune — the old
-  zcleanup-backups was folded into it), from an updated kit clone (THE
-  sanctioned account-level user_skills writer — sessions never run it casually)
-- `zremote` — PAT-masking `git remote` viewer (replaces `git remote -v`)
-- `zdoppler-smoke` — one-shot Doppler vault verification
-- `zkit-selftest` — end-to-end save/wipe/recover smoke test
-- ALL helpers accept `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides to target
-  another project / sync dir / account dir (worktrees, second projects,
-  sandboxes, scratch tests — one mechanism, see `kb/testing-helpers.md`).
-  zsave prints its resolved target (`proj=… prefix=…`) on the first output
-  line — glance at it before trusting a save.
-- (Removed in v5: `install.sh` — v3's installer; `zcleanup-backups` — its
-  backup-dir prune folded into `refresh.sh`, the one account-level maintenance
-  op. Nothing a session does needs either.)
+| Helper | What it does | Why it exists (the one-liner it beats) |
+|---|---|---|
+| `zsave "msg"` | commit + push (auto-rebase on rejection) + snapshot + repo.tar refresh + state marker | the auto-rebase recovery, atomic tar swaps on ossfs, PAT-masked stderr, nested-repo gitlink guard, lock, prune — hand-rolling all six mid-task is where saves get lost |
+| `zsession` | read-only situation report (recycle detection, watchdog hygiene, kit & config status for THIS project, recommended actions) | replaces ~10 improvised probes at session start with one command |
+| `zk-init <name>` | writes `.agents/config` with refuse-to-overwrite guard (`--force`, `--status`); `--default` bootstraps from the account default (wires origin + fetches + reveals); `--set-default` snapshots prefix+remote into the account default | the guards: overwriting a live project's identity silently is data loss |
+| `refresh.sh` | account-level upgrade: rename-aside swap of the canonical package + zip rebuild + housekeeping (backup prune, obsolete credential-file cleanup) | two atomic directory renames — a session must never see a torn kit |
+| `resolve-prefix.sh` | the identity contract (sourced by the bash helpers): `ZK_PREFIX` env > `.agents/config` > loud failure | one shared implementation of the kit's core invariant |
+| `daemonize.py` | double-fork background process that survives toolcalls | `nohup`/`setsid`/`&`/`disown` all die at toolcall end [V] — the double-fork is genuinely non-obvious |
 
-**Python (run from the canonical kit — `python3 /home/user_skills/z-container-kit/scripts/<name>`):**
-- `daemonize.py` — double-fork background process that survives toolcalls
-- `wdt_watch.py` — watchdog observation helper (forensic)
-- `doppler_fetch.py` — urllib version of `zdoppler-smoke`; stages secrets to `/tmp/my-project/doppler-secrets.json`
-- `verify_access.py` — urllib access verifier for GitHub / Cloudflare / Supabase (Supabase WAF needs `User-Agent: ${ZK_PREFIX}-verify`)
+ALL helpers accept `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides to target
+another project / sync dir / account dir (worktrees, second projects,
+sandboxes, scratch tests — one mechanism, see `kb/testing-helpers.md`).
+zsave prints its resolved target (`proj=… prefix=…`) on the first output
+line — glance at it before trusting a save.
 
-Use bash for quick one-shots; Python for multi-call flows that stage secrets
-across calls. Audit-callout detail per helper (F6, F8, F10, M7, M3, M4):
-`kb/helpers-audits.md`.
+**Deleted or moved in v5.1** (existence audit — every script now carries its
+justification in the table above):
+- `zremote` → a documented one-liner: `git remote get-url origin | sed -E 's#(ghp_|github_pat_)[A-Za-z0-9_]+#\1***#g'` (and `git remote` for names only).
+- `zdoppler-smoke` → **moved to secrets-vault-kit** (`bash /home/user_skills/secrets-vault-kit/scripts/zdoppler-smoke`) — Doppler is that kit's domain.
+- `doppler_fetch.py` → svk fact #4/#5 curl recipes cover it (staging pattern documented inline).
+- `verify_access.py` → svk's per-provider verification recipes (GitHub `/user`, Cloudflare `GET /accounts`, Supabase `/v1/projects` + custom UA) cover it.
+- `wdt_watch.py` → forensic evidence already captured in `evidence/` + `kb/watchdog-forensic.md`; the observation tool had no recurring consumer flow.
+- `zkit-selftest` → dev-time smoke test with no agent-facing flow; kit development uses its own scratch suites.
+- (Earlier removals: v5 deleted `install.sh` + `zcleanup-backups`; v5.1 deleted the `${ZK_PREFIX}-remote.url` credential-file mechanism itself.)
+
 
 ## DOPPLER_TOKEN_SEED callout
 
 (ZK_PREFIX comes from `.agents/config`: `source /home/z/my-project/.agents/config`
 first — each bash toolcall is a fresh subshell.)
 
-**Detection (R10-2 fix):** `zdoppler-smoke` filters out ALL `DOPPLER_*` keys,
+**Detection (R10-2 fix):** `zdoppler-smoke` (secrets-vault-kit:
+`bash /home/user_skills/secrets-vault-kit/scripts/zdoppler-smoke`) filters out ALL `DOPPLER_*` keys,
 so the seed is invisible in the canonical verification output. You MUST sweep
 all configs (not just the handover config) to detect it:
 
@@ -498,6 +525,7 @@ auto-delete — flag to the user. Detail + policy: `kb/doppler-token-seed.md`.
 DO
   bash /home/user_skills/z-container-kit/scripts/zsession              # session start report
   bash /home/user_skills/z-container-kit/scripts/zsave "msg"           # save everything
+  bash /home/user_skills/z-container-kit/scripts/zk-init --default     # fresh chat, account default set
   git -C /home/z/my-project worktree add /tmp/my-project/worktrees/x -b feature/x
   python3 /home/user_skills/z-container-kit/scripts/daemonize.py --log /tmp/x.log -- <cmd>
   single-shot probes only: ps aux, ss -tln, cat /proc/...
@@ -514,35 +542,35 @@ DON'T
   use `git remote -v`                                     # prints PAT — use `git remote`
 ```
 
-## New project setup (when the repo has never used this kit)
+## First time on a new repo (setup = one line)
 
-The setup flow — triggered when `.agents/config` does not exist and no backup
-repo carries one (see the MUST-READ decision block for how to tell the two
-flows apart). Setup is ONE command — write the project's identity file:
+Setup is not a separate flow anymore — the MUST-READ checklist above IS the
+flow; a new repo simply has nothing to restore. The only extra step is
+writing the identity file:
 
 ```bash
 bash /home/user_skills/z-container-kit/scripts/zk-init <your-project-name>
-```
-
-That writes `.agents/config` (`ZK_PREFIX=<name>`) — the ONLY per-project
-artifact the kit ever creates. There is nothing else to install: helpers run
-from the canonical kit, upgrades happen once per account (refresh.sh), and
-the config travels with the repo through GitHub and repo.tar. Commit it:
-
-```bash
 git add .agents/ && git commit -m "kit: project identity (.agents/config)"
 bash /home/user_skills/z-container-kit/scripts/zsave "project bootstrap checkpoint"
 ```
 
-`ZK_PREFIX` naming rules: lowercase, `[a-z0-9-]`, max 24 chars, must be unique
-among the projects you run in parallel under this account (it names the
-credential/snapshot/state files in `/home/user_skills/` and `/home/sync/`).
+`ZK_PREFIX` naming rules: lowercase, `[a-z0-9-]`, max 24 chars, unique among
+the projects you run in parallel under this account (it names the snapshot /
+state / doppler-env artifacts in `/home/sync/` and `/home/user_skills/`).
 There is NO auto-discovery — helpers read `ZK_PREFIX` from the env or from
 `.agents/config` and nothing else; if neither is set they fail loudly with
-the `zk-init` recipe (that is the .env contract: a missing config is a
-one-command fix, a wrong silent guess is data loss). Fix a wrong prefix with
-`zk-init <name> --force`. Detail, edge cases, and the multi-project rationale:
-`kb/new-project.md`.
+the `zk-init` recipe (the .env contract: a missing config is a one-command
+fix, a wrong silent guess is data loss). Fix a wrong prefix with
+`zk-init <name> --force`.
+
+**Single-project account?** After the first successful save, make future
+fresh chats zero-input: `bash …/zk-init --set-default` (snapshots
+prefix+origin into `/home/user_skills/zk-default.env`, mode 0600). Next
+fresh chat: `zk-init --default` discovers and wires everything, loudly
+revealing which project came back. Multi-repo accounts: do NOT set a
+default — state the project per chat and wire its remote explicitly (the
+default binds every chat to ONE repo and the reveal is the only tripwire).
+
 
 ## Multi-kit, multi-repo, multi-track model (v5)
 
@@ -579,7 +607,16 @@ own business, and user-skills is static.**
   never identity — auto-adopting from them is how the v3 "zk-onboard-test"
   cross-contamination happened. Missing config = loud one-command fix
   (`zk-init <name>`); wrong silent guess = data loss. Fix a wrong prefix
-  with `zk-init <name> --force`. Detail and edge cases: `kb/new-project.md`.
+  with `zk-init <name> --force`. Detail and edge cases: `kb/session-recovery.md`.
+
+- **The account default is OPT-IN and NEVER identity.** `zk-default.env`
+  (prefix + remote, 0600, set once by `zk-init --set-default`) exists purely
+  so a single-project account's fresh chats can run `zk-init --default`
+  instead of re-pasting a remote. It is not consulted by resolve-prefix,
+  never silently adopted, and refuses to override a repo's own config or a
+  wired origin (the guards live in zk-init --default). On a multi-repo
+  account it is a wrong-project trap — the reveal banner is the tripwire
+  that catches it, loudly.
 - **Upgrades are account-level and atomic.** `refresh.sh` swaps the canonical
   package via per-run staging + rename-aside (a concurrent session never sees
   a torn kit; worst case one racing command errors once and works on re-run)
@@ -596,34 +633,41 @@ own business, and user-skills is static.**
 /home/user_skills/z-container-kit/   THE kit — canonical, per-account, STATIC
                                      during sessions (PolarFS: survives
                                      recycle + force-kill + new chats)
-  scripts/zsave, zsession, zk-init,   run from here; location-agnostic (they read
-    refresh.sh, resolve-prefix.sh, …  identity from $PROJ/.agents/config)
+  scripts/ (SIX): zsave, zsession,   run from here; location-agnostic (they read
+    zk-init, refresh.sh,             identity from $PROJ/.agents/config)
+    resolve-prefix.sh, daemonize.py
   kb/, evidence/, SKILL.md, reference.md
 /home/user_skills/z-container.zip    portable zip — platform consumes it at
                                      sub-agent spawn; rebuilt atomically when
                                      missing (sanctioned write #2)
+/home/user_skills/zk-default.env     OPT-IN account default (prefix + remote,
+                                     0600) — written only by zk-init
+                                     --set-default (sanctioned write #4)
 /home/z/my-project/.agents/config    ZK_PREFIX=<project-name>  <- the ONLY
                                      per-project kit artifact (committed; the
                                      .env pattern, boot-safe)
 /home/z/my-project/.env              DATABASE_URL only — boot-MANAGED, gets rewritten
-/home/user_skills/${ZK_PREFIX}-*     credential files (sanctioned write #3:
-                                     atomic, write-only-on-change, never
-                                     committed)
+/home/user_skills/${ZK_PREFIX}-doppler.env   Doppler PT (secrets-vault-kit's
+                                     domain; atomic + fresher-wins, sanctioned
+                                     write #3)
 /home/sync/${ZK_PREFIX}-snapshots/,  per-project snapshots + state (per-chat,
-  ${ZK_PREFIX}-state.env              container-local — no cross-session race)
+  ${ZK_PREFIX}-state.env             container-local — no cross-session race)
 ```
 
-v3-era repos may still carry a `.agents/` kit tree, `scripts/` shims, and a
-`skills/z-container` symlink — v4 helpers never read them (they resolve
-identity from `.agents/config`, which v3 already wrote). Strip the dead
-weight with `zk-init --migrate-v3`, then zsave the removal.
+The origin remote URL lives in `.git/config` — inside repo.tar, inside every
+snapshot, inside github. There is deliberately NO per-project credential
+file anymore (v5.0's `${ZK_PREFIX}-remote.url` was removed in v5.1: it
+duplicated what the repo already carries, and fresh chats have the account
+default instead). v3-era repos may still carry a `.agents/` kit tree or
+`scripts/` shims — v4+ helpers never read them; remove by hand if you want.
+
 
 ## KB modules index (read when the topic is relevant)
 
-- `kb/session-recovery.md` — fresh-chat recovery detail: paths A/B/C, credential-file
-  shortcut, branch-rename, pre-flight snapshot (the deep-dive behind the
-  MUST-READ cold start above)
-- `kb/zsave-internals.md` — full 6-step zsave pipeline with exclude rules
+- `kb/session-recovery.md` — session start deep-dive: fresh-chat paths,
+  remote wiring (account default / user PAT / Doppler vault), branch-rename,
+  pre-flight snapshot, first-time setup on a new repo
+- `kb/zsave-internals.md` — full zsave pipeline with exclude rules
 - `kb/watchdog-advanced.md` — dirty shield, gitdir relocation, orphan recovery
 - `kb/watchdog-forensic.md` — forensic evidence for watchdog mechanics (the WHY)
 - `kb/persistence-namespaces.md` — per-chat vs per-user namespace inference
@@ -631,16 +675,13 @@ weight with `zk-init --migrate-v3`, then zsave the removal.
 - `kb/restore-procedures.md` — full A/B/C/D recovery flow
 - `kb/networking.md` — ports, Caddy, XTransformPort, egress detail
 - `kb/dev-server-database.md` — :3000 dev server, Prisma + SQLite detail
-- `kb/secrets-audits.md` — F11/F13/F18/F21/F12/F15 audit callouts
+- `kb/secrets-audits.md` — audit callouts for the secrets posture
 - `kb/sub-agents.md` — container-specific sub-agent deltas: shared-container
   isolation, zsave ownership, worklog commit/recovery (preset provides the rest)
 - `kb/terminal-lockout.md` — the irreversible caddy/port-loop 403 hazard (deep dive)
 - `kb/troubleshooting.md` — debugging trees for common symptoms
-- `kb/helpers-audits.md` — per-helper audit callouts (F6/F8/F10/M7/M3/M4)
+- `kb/helpers-audits.md` — per-helper audit callouts
 - `kb/doppler-token-seed.md` — PT-in-vault warning + detection policy
 - `kb/testing-helpers.md` — safe scratch testing of zsave/zsession
 - `kb/parallel-sessions.md` — concurrent-chat hazards on shared `/home/user_skills/`
 - `kb/container-internals.md` — runtime identity, mount topology, storage performance
-- `kb/new-project.md` — setting up a brand-new repo: zk-init, ZK_PREFIX choice,
-  multi-project naming, the v4 resolution order, first-save checklist
-

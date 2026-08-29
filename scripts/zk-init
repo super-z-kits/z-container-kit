@@ -1,27 +1,36 @@
 #!/usr/bin/env bash
-# zk-init — project-level kit initialization (kit v5.0)
+# zk-init — project identity + the account-default bridge (kit v5.1)
 #
 # The kit is ZERO-INSTALL: it lives once per ACCOUNT at
-# /home/user_skills/z-container-kit/ (canonical, refreshed by refresh.sh).
-# The ONLY per-project artifact is a one-line config file — the project's
-# "zk env", exactly like .env but boot-safe (the platform rewrites .env
-# every boot; it never touches .agents/config):
+# /home/user_skills/z-container-kit/. The ONLY per-project artifact is a
+# one-line identity file — the project's "zk env", boot-safe (the platform
+# rewrites .env every boot; it never touches .agents/config):
 #
 #   $PROJ/.agents/config   ->   ZK_PREFIX=<project-name>
 #
-# That file names this project's credential/snapshot/state artifacts
-# ($USK/<prefix>-remote.url, <prefix>-doppler.env, $SYNC/<prefix>-snapshots/,
-# <prefix>-state.env), is git-tracked, travels with the repo through GitHub
-# and repo.tar, and comes back on `git reset --hard origin/main` — which is
-# why v4 cold starts need no install step at all.
+# v5.1 adds the ACCOUNT DEFAULT — an opinionated, opt-in convenience for
+# accounts that truly work with ONE project:
+#
+#   $USK/zk-default.env    ->   ZK_DEFAULT_PREFIX=<name>
+#                                ZK_DEFAULT_REMOTE=<origin-url-with-PAT>
+#
+# With a default set, a fresh chat bootstraps with ZERO user input:
+#   bash zk-init --default    # writes config + wires origin + fetches +
+#                             # LOUDLY reveals which project came back
+# The default NEVER participates in identity resolution (resolve-prefix.sh
+# still reads exactly two sources: ZK_PREFIX env > $PROJ/.agents/config).
+# It is applied only through the explicit --default flag, and it refuses to
+# override anything the repo already says. Multi-repo accounts should NOT
+# set a default — every chat states its project, and the default would
+# silently bind the wrong one (the reveal banner exists to catch that).
 #
 # Usage:
-#   zk-init <prefix>            # write the config (refuses to overwrite)
-#   zk-init <prefix> --force    # overwrite (the wrong-prefix fix)
-#   zk-init --migrate-v3        # strip a v3.x kit tree (.agents/SKILL.md,
-#                                # scripts/, kb/, evidence/, shims, symlink),
-#                                # KEEP .agents/config — then zsave
-#   zk-init --status            # show config, v3 leftovers, canonical kit
+#   zk-init <name>             # write .agents/config (refuses to overwrite)
+#   zk-init <name> --force     # overwrite (the wrong-prefix fix)
+#   zk-init --default          # initialize from the account default (above)
+#   zk-init --set-default      # snapshot THIS project's prefix+origin into
+#                              #   the account default (conscious act)
+#   zk-init --status           # config, account default, canonical kit
 #
 # env: ZK_PROJ (default /home/z/my-project), ZK_USK (scratch tests)
 set -uo pipefail
@@ -29,34 +38,52 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PROJ="${ZK_PROJ:-/home/z/my-project}"
 USK="${ZK_USK:-/home/user_skills}"
-SYNC="${ZK_SYNC:-/home/sync}"
 AGENTS="$PROJ/.agents"
 CFG="$AGENTS/config"
+DEFAULT="$USK/zk-default.env"
+
+mask() { sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g; s#(dp\.pt\.|dp\.st\.|cfat_|sbp_)[A-Za-z0-9_.-]+#\1***#g'; }
 
 usage() {
   cat <<'EOF'
-zk-init — project-level kit initialization (kit v5.0, zero-install)
+zk-init — project identity + account-default bridge (kit v5.1, zero-install)
 
 The kit lives once per ACCOUNT at /home/user_skills/z-container-kit/.
 The ONLY per-project artifact is a one-line config — the project's "zk env",
-like .env but boot-safe (the platform rewrites .env every boot; it never
-touches .agents/config):
+boot-safe (the platform rewrites .env every boot; it never touches it):
 
   $PROJ/.agents/config   ->   ZK_PREFIX=<project-name>
 
-Usage:
-  zk-init <prefix>            # write the config (refuses to overwrite)
-  zk-init <prefix> --force    # overwrite (the wrong-prefix fix)
-  zk-init --migrate-v3        # strip a v3.x kit tree, KEEP .agents/config
-  zk-init --status            # show config, v3 leftovers, canonical kit
+Account default (opt-in, single-project accounts only):
+  $USK/zk-default.env    ->   ZK_DEFAULT_PREFIX=<name> + ZK_DEFAULT_REMOTE=<url>
 
-env: ZK_PROJ (default /home/z/my-project), ZK_USK, ZK_SYNC (scratch tests)
+Usage:
+  zk-init <name>             # write the config (refuses to overwrite)
+  zk-init <name> --force     # overwrite (the wrong-prefix fix)
+  zk-init --default          # init from the account default: config + origin
+                             #   + fetch + loud reveal (no auto reset --hard)
+  zk-init --set-default      # snapshot this project's prefix+origin as the
+                             #   account default (conscious, atomic, 0600)
+  zk-init --status           # show config, account default, canonical kit
+
+env: ZK_PROJ (default /home/z/my-project), ZK_USK (scratch tests)
 EOF
   exit "${1:-0}"
 }
 
 cur_prefix() {
   sed -n 's/^ZK_PREFIX=//p' "$CFG" 2>/dev/null | head -1 | tr -d "\"'"
+}
+
+# read the account default WITHOUT sourcing it (it contains the PAT).
+# sets DEF_PREFIX / DEF_REMOTE; returns 1 if the file is absent or malformed.
+read_default() {
+  DEF_PREFIX=""; DEF_REMOTE=""
+  [ -f "$DEFAULT" ] || return 1
+  DEF_PREFIX="$(sed -n 's/^ZK_DEFAULT_PREFIX=//p' "$DEFAULT" 2>/dev/null | head -1 | tr -d "\"'" | tr -d '[:space:]')"
+  DEF_REMOTE="$(sed -n 's/^ZK_DEFAULT_REMOTE=//p' "$DEFAULT" 2>/dev/null | head -1 | tr -d "\"" | sed 's/[[:space:]]*$//')"
+  [ -n "$DEF_REMOTE" ] || return 1
+  return 0
 }
 
 validate() {
@@ -72,34 +99,32 @@ validate() {
   fi
 }
 
-STATUS=0; FORCE=0; MIGRATE=0; PREFIX_ARG=""
+write_config() {  # $1 = prefix, $2 = 0|1 force
+  validate "$1"
+  if [ -f "$CFG" ] && [ "$(cur_prefix)" != "$1" ] && [ "$2" != 1 ]; then
+    echo "zk-init: $CFG already exists (ZK_PREFIX=$(cur_prefix)) — refusing to overwrite." >&2
+    echo "  keep it as-is, or re-init deliberately: bash $SCRIPT_DIR/zk-init $1 --force" >&2
+    exit 1
+  fi
+  mkdir -p "$AGENTS"
+  printf 'ZK_PREFIX=%s\n' "$1" > "$CFG"
+  chmod 0644 "$CFG"   # committed, non-secret (a project name only)
+  echo "[ok] wrote $CFG (ZK_PREFIX=$1)"
+}
+
+STATUS=0; FORCE=0; USE_DEFAULT=0; SET_DEFAULT=0; PREFIX_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --status)    STATUS=1 ;;
-    --force)     FORCE=1 ;;
-    --migrate-v3) MIGRATE=1 ;;
-    -h|--help)   usage 0 ;;
-    -*)          echo "zk-init: unknown arg: $1" >&2; usage 2 ;;
-    *)           PREFIX_ARG="$1" ;;
+    --status)      STATUS=1 ;;
+    --force)       FORCE=1 ;;
+    --default)     USE_DEFAULT=1 ;;
+    --set-default) SET_DEFAULT=1 ;;
+    -h|--help)     usage 0 ;;
+    -*)            echo "zk-init: unknown arg: $1" >&2; usage 2 ;;
+    *)             PREFIX_ARG="$1" ;;
   esac
   shift
 done
-
-# Known v3-era helper filenames (scripts/ shims + real copies)
-V3_HELPERS="zsave zsession zdoppler-smoke zkit-selftest zcleanup-backups zremote install.sh resolve-prefix.sh daemonize.py doppler_fetch.py verify_access.py wdt_watch.py"
-
-# _is_kit_artifact <file> — conservative marker check: ONLY these count as
-# kit artifacts (a user file that merely MENTIONS the kit must survive):
-#   - v3 shim marker:      'shim -> .agents/scripts'
-#   - versioned headers:   '(kit v2' / '(kit v3' / '(kit v4'
-#   - the resolver:        defines _resolve_prefix (any era, never versioned)
-# Files with a known helper name but NO marker (e.g. doppler_fetch.py copies
-# that never carried a version header) are reported for manual review, never
-# auto-deleted (false negative = harmless dead file; false positive = user
-# data loss — we always err toward the former).
-_is_kit_artifact() {
-  head -10 "$1" 2>/dev/null | grep -q 'shim -> \.agents/scripts\|(kit v[234]\.\|_resolve_prefix'
-}
 
 # ---------------------------------------------------------------- --status ---
 if [ "$STATUS" = 1 ]; then
@@ -109,26 +134,20 @@ if [ "$STATUS" = 1 ]; then
   else
     echo "  config: MISSING — initialize with: bash $SCRIPT_DIR/zk-init <name>"
   fi
-  V3LEFT=""; V3REVIEW=""
-  for p in SKILL.md reference.md README.md scripts kb evidence; do
-    [ -e "$AGENTS/$p" ] && V3LEFT="$V3LEFT .agents/$p"
-  done
-  for f in $V3_HELPERS; do
-    [ -e "$PROJ/scripts/$f" ] || continue
-    if _is_kit_artifact "$PROJ/scripts/$f"; then
-      V3LEFT="$V3LEFT scripts/$f"
-    else
-      V3REVIEW="$V3REVIEW scripts/$f"
-    fi
-  done
-  [ -e "$PROJ/skills/z-container" ] && V3LEFT="$V3LEFT skills/z-container"
-  if [ -n "$V3LEFT" ]; then
-    echo "  v3 kit leftovers (harmless — helpers no longer read them):$V3LEFT"
-    echo "    strip with: bash $SCRIPT_DIR/zk-init --migrate-v3  (then zsave)"
+  if read_default; then
+    echo "  account default: $DEFAULT (prefix=$DEF_PREFIX)"
+    echo "    remote (masked): $(printf '%s' "$DEF_REMOTE" | mask)"
+    echo "    apply with: bash $SCRIPT_DIR/zk-init --default   (single-project accounts only)"
   else
-    echo "  v3 kit leftovers: none"
+    echo "  account default: none ($DEFAULT)"
+    echo "    set one with: bash $SCRIPT_DIR/zk-init --set-default   (from a configured+wired project)"
   fi
-  [ -n "$V3REVIEW" ] && echo "  possible kit leftovers, NO marker (review by hand; kept):$V3REVIEW"
+  ORIG="$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)"
+  if [ -n "$ORIG" ]; then
+    echo "  origin (masked): $(printf '%s' "$ORIG" | mask)"
+  else
+    echo "  origin: none (github is the only cross-chat persistence — wire one)"
+  fi
   if [ -f "$USK/z-container-kit/SKILL.md" ]; then
     echo "  canonical kit: $USK/z-container-kit (v$(sed -n 's/^  version: "\(.*\)"/\1/p' "$USK/z-container-kit/SKILL.md" | head -1))"
   else
@@ -137,67 +156,154 @@ if [ "$STATUS" = 1 ]; then
   exit 0
 fi
 
-# ------------------------------------------------------------ write config ---
-if [ -n "$PREFIX_ARG" ]; then
-  validate "$PREFIX_ARG"
-  if [ -f "$CFG" ] && [ "$(cur_prefix)" != "$PREFIX_ARG" ] && [ "$FORCE" != 1 ]; then
-    echo "zk-init: $CFG already exists (ZK_PREFIX=$(cur_prefix)) — refusing to overwrite." >&2
-    echo "  keep it as-is, or re-init deliberately: bash $SCRIPT_DIR/zk-init $PREFIX_ARG --force" >&2
+# ------------------------------------------------------------ --set-default ---
+if [ "$SET_DEFAULT" = 1 ]; then
+  CUR="$(cur_prefix)"
+  if [ -z "$CUR" ]; then
+    echo "zk-init --set-default: no $CFG — initialize first: bash $SCRIPT_DIR/zk-init <name>" >&2
     exit 1
   fi
-  mkdir -p "$AGENTS"
-  printf 'ZK_PREFIX=%s\n' "$PREFIX_ARG" > "$CFG"
-  chmod 0644 "$CFG"   # committed, non-secret (a project name only)
-  echo "[ok] wrote $CFG (ZK_PREFIX=$PREFIX_ARG)"
-  echo "     it names $USK/${PREFIX_ARG}-remote.url, ${PREFIX_ARG}-doppler.env,"
-  echo "     $SYNC/${PREFIX_ARG}-snapshots/, ${PREFIX_ARG}-state.env"
-  echo "     commit it so it travels with the repo: git -C $PROJ add .agents/"
+  URL="$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)"
+  if [ -z "$URL" ]; then
+    echo "zk-init --set-default: $PROJ has no origin remote — wire one first:" >&2
+    echo "  git -C $PROJ remote add origin https://<PAT>@github.com/<user>/<repo>.git" >&2
+    exit 1
+  fi
+  # single fixed filename + atomic tmp+mv + 0600: zero-collision by construction
+  # (two racing set-defaults are both user-directed acts; last write wins whole)
+  T="$DEFAULT.tmp.$$"
+  if ! printf 'ZK_DEFAULT_PREFIX=%s\nZK_DEFAULT_REMOTE=%s\n' "$CUR" "$URL" > "$T" 2>/dev/null; then
+    echo "zk-init --set-default: cannot write $T ($USK writable?)" >&2
+    rm -f "$T" 2>/dev/null
+    exit 1
+  fi
+  chmod 0600 "$T"
+  if ! mv -f "$T" "$DEFAULT" 2>/dev/null; then
+    echo "zk-init --set-default: atomic swap failed" >&2
+    rm -f "$T" 2>/dev/null
+    exit 1
+  fi
+  echo "[ok] account default -> $DEFAULT (mode $(stat -c '%a' "$DEFAULT" 2>/dev/null || echo '?'))"
+  echo "     prefix=$CUR   remote=$(printf '%s' "$URL" | mask)"
+  echo ""
+  echo "     This binds FRESH CHATS to this ONE project (they run"
+  echo "     'zk-init --default' and skip the remote handover). It is the right"
+  echo "     call ONLY if this account truly works with this single project."
+  echo "     Multi-repo account? REMOVE it now (rm $DEFAULT) — a default on a"
+  echo "     multi-repo account is a wrong-project trap; state the project per chat."
+  echo "     (rotate the PAT anytime: git remote set-url origin <new-url> && re-run --set-default)"
+  exit 0
+fi
+
+# ---------------------------------------------------------------- --default ---
+if [ "$USE_DEFAULT" = 1 ]; then
+  if ! read_default; then
+    echo "zk-init --default: no account default at $DEFAULT (or malformed)." >&2
+    echo "  set one from a configured+wired project: bash $SCRIPT_DIR/zk-init --set-default" >&2
+    exit 1
+  fi
+  if [ -n "$DEF_PREFIX" ]; then validate "$DEF_PREFIX" || exit 1; fi
+  CUR="$(cur_prefix)"
+  ORIG="$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)"
+
+  # guard 1: the repo's own identity WINS over the account default — always
+  if [ -n "$CUR" ] && [ -n "$DEF_PREFIX" ] && [ "$CUR" != "$DEF_PREFIX" ]; then
+    echo "zk-init --default: REFUSED — this repo is already identified as '$CUR' but the" >&2
+    echo "  account default says '$DEF_PREFIX'. Repo identity wins (the .env contract)." >&2
+    echo "  this is a MULTI-REPO situation: do not use the default here." >&2
+    echo "  either keep '$CUR' (nothing to do), or re-identify deliberately:" >&2
+    echo "    bash $SCRIPT_DIR/zk-init $CUR --force   # after changing the repo's remote by hand" >&2
+    exit 1
+  fi
+  # guard 2: a wired remote WINS over the account default — the repo knows itself
+  if [ -n "$ORIG" ] && [ "$ORIG" != "$DEF_REMOTE" ]; then
+    echo "zk-init --default: REFUSED — origin is already wired to a DIFFERENT remote" >&2
+    echo "  than the account default:" >&2
+    echo "    origin (masked):  $(printf '%s' "$ORIG" | mask)" >&2
+    echo "    default (masked): $(printf '%s' "$DEF_REMOTE" | mask)" >&2
+    echo "  this is a MULTI-REPO situation: the default is wrong for this chat." >&2
+    echo "  keep the wired origin (nothing to do), or fix/remove the default:" >&2
+    echo "    rm $DEFAULT   # then state the project per chat" >&2
+    exit 1
+  fi
+  # need a prefix from somewhere: default's, or the repo's existing one
+  TARGET_PREFIX="$DEF_PREFIX"; [ -z "$TARGET_PREFIX" ] && TARGET_PREFIX="$CUR"
+  if [ -z "$TARGET_PREFIX" ]; then
+    echo "zk-init --default: the default file has no ZK_DEFAULT_PREFIX and this repo has" >&2
+    echo "  no .agents/config — cannot name the project. Re-create the default with:" >&2
+    echo "    bash $SCRIPT_DIR/zk-init <name> && bash $SCRIPT_DIR/zk-init --set-default" >&2
+    exit 1
+  fi
+
+  write_config "$TARGET_PREFIX" "$FORCE"
+
+  # wire origin (only if absent — guard 2 already refused a differing one)
+  if [ -z "$ORIG" ]; then
+    if [ ! -e "$PROJ/.git" ]; then
+      git -C "$PROJ" init -b main >/dev/null 2>&1 || git -C "$PROJ" init >/dev/null 2>&1
+    fi
+    if ! git -C "$PROJ" remote add origin "$DEF_REMOTE" 2>/dev/null; then
+      echo "[warn] could not add origin remote (already present?)" >&2
+    else
+      echo "[ok] origin wired from the account default: $(printf '%s' "$DEF_REMOTE" | mask)"
+    fi
+  else
+    echo "[ok] origin already matches the account default: $(printf '%s' "$ORIG" | mask)"
+  fi
+
+  # fetch + REVEAL — this is the discovery step: whatever project the account
+  # is bound to comes back HERE, in the open, before any destructive reset.
+  echo "[..] fetching origin ..."
+  if git -C "$PROJ" fetch origin 2>&1 | mask; then
+    echo ""
+    echo "=== REVEAL: origin/main (the project this account is bound to) ==="
+    if git -C "$PROJ" rev-parse --verify -q origin/main >/dev/null; then
+      git -C "$PROJ" log origin/main --oneline -5 2>/dev/null | mask
+    else
+      echo "(no origin/main — empty/new remote, or default branch is not 'main': git -C $PROJ branch -r)"
+    fi
+    echo "==================================================================="
+    echo ""
+    echo "ACCOUNT DEFAULT APPLIED: prefix=$TARGET_PREFIX  (single-project binding)."
+    echo "  commits above are YOUR project? continue the session start:"
+    echo "    git -C $PROJ reset --hard origin/main     # bring the workspace back"
+    echo "    tail -80 $PROJ/worklog.md                 # prior-session context"
+    echo "  commits above are the WRONG project? STOP — this account's default is"
+    echo "  set to another repo. Undo and state your project explicitly:"
+    echo "    git -C $PROJ remote remove origin; rm $CFG"
+    echo "    bash $SCRIPT_DIR/zk-init <your-project>; git -C $PROJ remote add origin <your-url>"
+    echo "  then: bash $SCRIPT_DIR/zsave 'fresh-chat bootstrap checkpoint'"
+  else
+    echo "[warn] fetch failed — default's PAT expired/revoked, or network." >&2
+    echo "  remote is wired ($(printf '%s' "$DEF_REMOTE" | mask)) but unreachable." >&2
+    echo "  fix: rotate the PAT, re-run --set-default from a working session," >&2
+    echo "  or wire the remote manually: git -C $PROJ remote set-url origin <new-url>" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+# ------------------------------------------------------------ write config ---
+if [ -n "$PREFIX_ARG" ]; then
+  write_config "$PREFIX_ARG" "$FORCE"
+  echo "     it names ${USK}/${PREFIX_ARG}-doppler.env (secrets-vault-kit) and"
+  echo "     ${ZK_SYNC:-/home/sync}/${PREFIX_ARG}-snapshots/ — commit it so it travels with the repo:"
+  echo "     git -C $PROJ add .agents/"
 elif [ -f "$CFG" ]; then
   echo "[ok] $CFG already present (ZK_PREFIX=$(cur_prefix)) — nothing to write"
 else
   echo "zk-init: no $CFG and no <prefix> given." >&2
   echo "  usage: bash $SCRIPT_DIR/zk-init <project-name>   # lowercase [a-z0-9-], max 24" >&2
+  echo "  account default set? bash $SCRIPT_DIR/zk-init --default" >&2
   exit 1
 fi
 
-# ------------------------------------------------------------ git hygiene ---
+# --------------------------------------------------------- git hygiene ---
 # (from v3 install.sh step 7 — the one git-config touchpoint the kit needs.
 # LIVE-only: a scratch ZK_PROJ must not leak entries into the global config)
 if [ "$PROJ" = "/home/z/my-project" ] || [ -z "${ZK_PROJ:-}" ]; then
   git config --global --unset-all safe.directory "$PROJ" 2>/dev/null || true
   git config --global --add safe.directory "$PROJ" 2>/dev/null || true
-fi
-
-# --------------------------------------------------------- --migrate-v3 ------
-if [ "$MIGRATE" = 1 ]; then
-  if [ ! -f "$CFG" ]; then
-    echo "zk-init --migrate-v3: no $CFG — pass a prefix too:" >&2
-    echo "  bash $SCRIPT_DIR/zk-init <name> --migrate-v3" >&2
-    exit 1
-  fi
-  echo "--- migrate-v3: stripping the instantiated kit (keeping .agents/config) ---"
-  REMOVED=0
-  for p in SKILL.md reference.md README.md scripts kb evidence; do
-    if [ -e "$AGENTS/$p" ]; then
-      rm -rf "$AGENTS/$p" && REMOVED=$((REMOVED+1)) && echo "[ok] removed .agents/$p"
-    fi
-  done
-  # scripts/ entries: ONLY marker-confirmed kit artifacts (see
-  # _is_kit_artifact) — a user file that merely mentions the kit survives.
-  # Unmarked known-name files are listed for manual review, never deleted.
-  REVIEW=""
-  for f in $V3_HELPERS; do
-    fp="$PROJ/scripts/$f"
-    [ -f "$fp" ] || continue
-    if _is_kit_artifact "$fp"; then
-      rm -f "$fp" && REMOVED=$((REMOVED+1)) && echo "[ok] removed scripts/$f (kit artifact)"
-    else
-      REVIEW="$REVIEW scripts/$f"
-    fi
-  done
-  [ -n "$REVIEW" ] && echo "[note] kept (helper name but NO kit marker — remove by hand if it is a v3 copy):$REVIEW"
-  echo "[ok] migrate-v3 done ($REMOVED items removed; .agents/config kept)"
-  echo "     commit the removal: bash $SCRIPT_DIR/zsave 'v4 migration: strip v3 kit tree'"
 fi
 
 echo

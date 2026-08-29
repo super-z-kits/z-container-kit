@@ -27,16 +27,18 @@ construction:
 2. **Portable kit zip rebuild** — only when the platform consumed it, same
    bytes from a static source, atomic tmp+mv. Concurrent rebuilds are
    harmless (both produce identical bytes).
-3. **Credential files** (`${ZK_PREFIX}-remote.url`, `${ZK_PREFIX}-doppler.env`)
-   — keyed by the project's unique prefix (different repos never share a
-   filename); written atomically (same-dir tmp + mv — a parallel reader sees
-   old-or-new, never partial); and only when the bytes actually changed
-   (zsave skips the write entirely on identical content). For same-repo
-   parallel sessions the accepted semantic is last-writer-wins: every writer
-   just pushed to the SAME repo, so whichever bytes survive are a URL that
-   last worked. Doppler env files additionally honor **fresher-wins**: never
-   overwrite a file whose `DOPPLER_PT_STORED_AT` timestamp is newer than
-   yours (an older chat's stale PT must not clobber a fresh rotation).
+3. **Prefix-keyed credential placements** — in practice
+   secrets-vault-kit's `${ZK_PREFIX}-doppler.env` (different repos never
+   share a filename; written atomically, same-dir tmp + mv — a parallel
+   reader sees old-or-new, never partial; **fresher-wins**: never overwrite
+   a file whose `DOPPLER_PT_STORED_AT` timestamp is newer than yours).
+   v5.1 DELETED `${ZK_PREFIX}-remote.url` entirely: the origin URL travels
+   inside the repo (`.git/config`), so there is no per-save credential
+   write at all anymore.
+4. **The account default** (`zk-default.env`) — a single fixed filename,
+   written ONLY by the explicit `zk-init --set-default` (a conscious,
+   user-directed act; atomic tmp+mv, mode 0600). Racing set-defaults are
+   both deliberate acts; last whole-file write wins, never a torn file.
 
 Anything else a session might want to persist belongs in the REPO (git-tracked
 — mergeable) or in per-chat storage (`/home/sync`, `/tmp/my-project` —
@@ -67,7 +69,8 @@ an ownership convention, not a corruption guard.
 
 - **Every-push credential rewrite** wrote `user_skills/<prefix>-remote.url`
   unconditionally and non-atomically — mtime churn and partial-read windows
-  for parallel sessions. → Now: write-only-on-change + atomic swap.
+  for parallel sessions. → v5.0: write-only-on-change + atomic swap; v5.1:
+  the file is GONE (the remote travels inside the repo — nothing to write).
 - **"Fresh paste wins" PT clobber**: a session holding an older PT could
   overwrite a newer one; writes were `cat > file` (non-atomic). → Now:
   fresher-wins timestamp guard + atomic swap (secrets-vault-kit recipe).
