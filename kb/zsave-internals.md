@@ -4,7 +4,7 @@ Full 6-step pipeline with exclude rules. Extracted from SKILL.md v2.3.3.
 ## Saving work — zsave
 
 ```
-bash /home/z/my-project/scripts/zsave "milestone message"
+bash /home/z/my-project/scripts/zsave "<what you just finished>"
 ```
 
 Does, in order **[V]** (each step degrades gracefully; the exit code is nonzero
@@ -34,8 +34,11 @@ if commit/snapshot/repo.tar fail — a push failure is a warning):
    stale one;
 6. write `/home/sync/${ZK_PREFIX}-state.env` atomically (recycle detector for zsession).
 
-Run it: after every meaningful milestone, before risky operations, and at least
-every ~10 toolcalls in long sessions. It is cheap (a few seconds).
+Run it: after every micro-milestone — any good moment: a file finished, a
+step verified, a bug fixed — before risky operations, and at least every ~10
+toolcalls in long sessions. It is cheap (a few seconds). Waiting for a
+"big enough" moment is how work gets lost — the grand final save never
+happens.
 
 Concurrency: zsave takes a per-container lock (`/tmp/.zsave.lock`). **Sub-agents
 must NOT run zsave** — the coordinating agent owns saves (two concurrent runs

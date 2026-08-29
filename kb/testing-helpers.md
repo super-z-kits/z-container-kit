@@ -28,6 +28,8 @@ Notes:
   package-presence check. Without it, a scratch install.sh still READS the
   real `/home/user_skills/*-config.env` during prefix discovery and zsession
   reports the real package path.
+- The python helpers (`doppler_fetch.py`, `verify_access.py`) honor
+  `ZK_USK` / `ZK_PROJ` the same way (v3.1.5 — PR#2 review F4).
 - `ZK_PREFIX` passed explicitly outranks everything (tier 1) — use it to test
   a specific prefix without creating config files.
 - Scratch-mode guards: zsave writes NO credential file (the write is gated on

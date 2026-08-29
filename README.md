@@ -29,8 +29,11 @@ Wire the remote BEFORE the kit install so the installer can derive
 `ZK_PREFIX` from the origin URL (same order as SKILL.md MUST-READ step 4):
 
 ```bash
-# 0) get the kit (public repo — no PAT needed for the clone itself)
-git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit   # any scratch path works
+# 0) get the kit — LOCAL FIRST: the read-only package at
+#    /home/user_skills/z-container-kit/ survives into new chats; use it when
+#    present. Clone only if it is absent (public repo — no PAT needed):
+KIT=/home/user_skills/z-container-kit
+[ -f "$KIT/scripts/install.sh" ] || { git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit; KIT=/tmp/my-project/kit; }
 
 # 1) wire the GitHub repo that backs THIS workspace (user-supplied PAT)
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git
@@ -41,13 +44,13 @@ git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0
 git -C /home/z/my-project reset --hard origin/main
 
 # 3) instantiate the kit (LOAD-BEARING: .agents/ + config + scripts/ shims + skills/ symlink)
-bash /tmp/my-project/kit/scripts/install.sh
+bash "$KIT/scripts/install.sh"
 
 # 4) re-anchor persistence (commit + push + snapshot + repo.tar in one shot)
 bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
 ```
 
-The PAT is typed exactly once (step 2) — it is already in the transcript via
+The PAT is typed exactly once (step 1) — it is already in the transcript via
 the user's message; every helper masks it in all subsequent output (rotate at
 github.com/settings/tokens anytime if concerned). install.sh strips any
 clone-borne `.git` from kit copies, so they stay plain, trackable directories.
@@ -58,9 +61,7 @@ read `SKILL.md` — the "New session — MUST READ" section comes first.
 Shortcut: if a prior session left `/home/user_skills/${ZK_PREFIX}-remote.url` (the
 zsave-maintained credential file — the prefix is the filename part before
 `-remote.url`), step 1 becomes
-`git -C /home/z/my-project remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`
-— and if the kit copy in `/home/user_skills/z-container-kit` survived, you
-can skip the clone entirely and install from there.
+`git -C /home/z/my-project remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`.
 
 ## Contents
 
@@ -82,5 +83,5 @@ can skip the clone entirely and install from there.
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides for safe scratch testing.
-- Version 3.1.2 — provenance and validation history in `reference.md` §13
+- Version 3.1.5 — provenance and validation history in `reference.md` §13
   (v3.x entry appended).

@@ -43,7 +43,9 @@ _resolve_prefix() {
   # (2) Legacy per-project discovery via /home/user_skills/*-config.env
   local configs count
   configs=$(ls "$USK"/*-config.env 2>/dev/null || true)
-  count=$(printf '%s\n' "$configs" | grep -c . 2>/dev/null || echo 0)
+  # grep -c prints 0 AND exits 1 on zero matches — `|| true` keeps count a clean
+  # integer instead of a bogus "0\n0" (PR#2 review F6)
+  count=$(printf '%s\n' "$configs" | grep -c . 2>/dev/null || true)
   if [ "$count" = "1" ]; then
     # Single config — unambiguous, use it
     # shellcheck disable=SC1090
@@ -114,6 +116,13 @@ _resolve_prefix() {
   if [ -z "$existing_prefix" ] && [ "$count" -ge 1 ] 2>/dev/null; then
     first_config=$(printf '%s\n' "$configs" | head -1)
     if [ -n "$first_config" ] && [ -f "$first_config" ]; then
+      # v2.x failed loudly here; v3.1 tie-breaks — restore the safety net with
+      # a stderr note so a multi-project account can catch a wrong pick (PR#2 F3)
+      if [ "$count" -gt 1 ] 2>/dev/null; then
+        echo "resolve-prefix: MULTIPLE config.env files — tie-breaking with $(basename "$first_config") of:" >&2
+        printf '%s\n' "$configs" | sed 's/^/    /' >&2
+        echo "  if that is the WRONG project, re-run with ZK_PREFIX=<name>" >&2
+      fi
       # shellcheck disable=SC1090
       p=$(source "$first_config" 2>/dev/null && printf '%s' "${ZK_PREFIX:-}")
       if [ -n "$p" ]; then

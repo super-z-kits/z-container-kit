@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install.sh — instantiate the z-container kit into your repo at .agents/
-# (kit v3.1.4)
+# (kit v3.1.5)
 #
 # Usage:
 #   bash /home/user_skills/z-container-kit/scripts/install.sh   # normal upgrade
@@ -225,11 +225,15 @@ echo "[ok] skills/z-container/SKILL.md -> .agents/SKILL.md (platform discovery)"
 # the docs claim 'skills/ is git-ignored' — on a NEW repo nothing enforced it,
 # and the first zsave committed the symlink.)
 if [ -e "$PROJ/.git" ]; then
-  EXCL="$PROJ/.git/info/exclude"
-  if [ -f "$PROJ/.git" ] && grep -q '^gitdir: ' "$PROJ/.git" 2>/dev/null; then
-    GD="$(sed -n 's/^gitdir: *//p' "$PROJ/.git" | tr -d '[:space:]')"
-    [ -n "$GD" ] && EXCL="$GD/info/exclude"
+  # exclude lives in the COMMON gitdir — for a linked worktree $PROJ/.git is a
+  # pointer to worktrees/<name>, whose info/exclude git never reads (PR#2 F5)
+  GD="$(git -C "$PROJ" rev-parse --git-common-dir 2>/dev/null || true)"
+  if [ -n "$GD" ]; then
+    case "$GD" in /*) ;; *) GD="$PROJ/$GD" ;; esac   # rev-parse may be relative
+  else
+    GD="$PROJ/.git"
   fi
+  EXCL="$GD/info/exclude"
   if mkdir -p "$(dirname "$EXCL")" 2>/dev/null; then
     touch "$EXCL" 2>/dev/null
     grep -qxF '/skills/' "$EXCL" 2>/dev/null || echo '/skills/' >> "$EXCL" 2>/dev/null

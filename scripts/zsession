@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # zsession — Z-container situation report at session start (read-only).
-# (kit v3.1.4)
+# (kit v3.1.5)
 # Makes no persistent changes: mount checks create+remove one unique
 # .${PREFIX}-rw-$$ probe file; git commands only read (status may refresh the
 # index stat-cache, which is cosmetic).
@@ -300,7 +300,7 @@ if [ "$n" -eq 0 ]; then
   if [ "$COLD" = 1 ]; then
     echo "no other actions — follow the cold-start sequence above."
   else
-    echo "none — everything looks healthy. Continue work; zsave at next milestone."
+    echo "none — everything looks healthy. Continue work; zsave at the next micro-milestone (any good moment)."
   fi
 fi
 echo "(report only — no persistent changes; mount checks use a unique .${PREFIX}-rw-$$ probe file)"
