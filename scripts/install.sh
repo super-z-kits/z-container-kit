@@ -103,9 +103,10 @@ copy_tree() {  # copy_tree <src-kit> <dest-dir> <preserve-file...>
 }
 
 # ------------------------------------------------- step 1: .agents/config ----
-# Resolve ZK_PREFIX BEFORE instantiating, so the new .agents/ is born with its
-# config. Priority: existing .agents/config > env var > legacy config.env >
-# git remote basename > interactive prompt (TTY only) > fail loudly.
+# ONE resolution chain, shared with every other helper: source resolve-prefix.sh
+# (env var -> legacy config.env -> durable-artifact scan -> remote-URL basename).
+# The instantiated .agents/config, when present, is sourced FIRST so it arrives
+# as tier 1 and always wins (preserved on upgrades, never re-derived).
 CONFIG_SRC=""
 if [ -f "$AGENTS/config" ]; then
   # shellcheck disable=SC1091
@@ -114,29 +115,17 @@ if [ -f "$AGENTS/config" ]; then
   CONFIG_SRC="preserved"
 fi
 if [ "$CONFIG_SRC" = "" ] && [ -z "${ZK_PREFIX:-}" ]; then
-  # legacy migration: exactly one /home/user_skills/*-config.env
-  legacy_configs=$(ls "$USK"/*-config.env 2>/dev/null || true)
-  legacy_count=$(printf '%s\n' "$legacy_configs" | grep -c . 2>/dev/null || true)
-  if [ "${legacy_count:-0}" = "1" ] 2>/dev/null; then
-    # shellcheck disable=SC1090
-    . "$legacy_configs" 2>/dev/null || true
-    [ -n "${ZK_PREFIX:-}" ] && CONFIG_SRC="migrated from $legacy_configs"
+  # shellcheck disable=SC1091
+  if source "$SCRIPT_DIR/resolve-prefix.sh" 2>/dev/null && [ -n "${PREFIX:-}" ]; then
+    ZK_PREFIX="$PREFIX"
+    CONFIG_SRC="auto-discovered (legacy config.env / artifact scan / origin-URL basename)"
+    echo "[note] ZK_PREFIX=$ZK_PREFIX ($CONFIG_SRC)"
+    echo "      If that is the WRONG project (e.g. a legacy config file from another project"
+    echo "      of yours, or an unwanted URL-basename derivation), fix now:"
+    echo "        rm $AGENTS/config 2>/dev/null; ZK_PREFIX=<name> bash \"$0\""
   fi
 fi
-if [ "$CONFIG_SRC" = "" ] && [ ! -f "$AGENTS/config" ] && [ -z "${ZK_PREFIX:-}" ]; then
-  # derive from the git remote URL basename (true cold start)
-  remote_url="$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)"
-  if [ -n "$remote_url" ]; then
-    derived="$(printf '%s' "$remote_url" \
-      | sed -E 's|^[^:]+://||; s|.*[:/]||; s|\.git$||; y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/' \
-      | tr -dc 'a-z0-9-' | head -c 24)"
-    if [ -n "$derived" ]; then
-      ZK_PREFIX="$derived"
-      CONFIG_SRC="derived from origin URL basename"
-    fi
-  fi
-fi
-if [ "$CONFIG_SRC" = "" ] && [ ! -f "$AGENTS/config" ] && [ -z "${ZK_PREFIX:-}" ]; then
+if [ "$CONFIG_SRC" = "" ] && [ -z "${ZK_PREFIX:-}" ]; then
   # last resort: interactive prompt — ONLY when a TTY exists (agent bash
   # toolcalls have none; fail loudly instead of hanging)
   if [ -t 0 ]; then
@@ -171,6 +160,7 @@ if [ ! -f "$AGENTS/config" ]; then
     echo "[fail] ZK_PREFIX '$ZK_PREFIX' longer than 24 chars" >&2
     exit 1
   fi
+  [ -n "$CONFIG_SRC" ] || CONFIG_SRC="env var"
 fi
 
 # ------------------------------------------------- step 2: instantiate ------
@@ -227,7 +217,25 @@ echo "[ok] scripts/: $made_shims shims (exec -> .agents/scripts/), $made_copies 
 echo "--- step 4: skills/z-container discovery symlink ---"
 mkdir -p "$PROJ/skills/z-container"
 ln -sfn ../../.agents/SKILL.md "$PROJ/skills/z-container/SKILL.md"
-echo "[ok] skills/z-container/SKILL.md -> .agents/SKILL.md (platform discovery; git-ignored, recreated by install)"
+echo "[ok] skills/z-container/SKILL.md -> .agents/SKILL.md (platform discovery)"
+# keep skills/ out of git (the symlink dangles in clones without .agents/;
+# official skills re-extract at boot anyway). .git/info/exclude is kit-managed
+# and never touches the user's .gitignore. Anchored at repo root so nested
+# source dirs like app/skills/ stay tracked. (round-11 usability fix U1:
+# the docs claim 'skills/ is git-ignored' — on a NEW repo nothing enforced it,
+# and the first zsave committed the symlink.)
+if [ -e "$PROJ/.git" ]; then
+  EXCL="$PROJ/.git/info/exclude"
+  if [ -f "$PROJ/.git" ] && grep -q '^gitdir: ' "$PROJ/.git" 2>/dev/null; then
+    GD="$(sed -n 's/^gitdir: *//p' "$PROJ/.git" | tr -d '[:space:]')"
+    [ -n "$GD" ] && EXCL="$GD/info/exclude"
+  fi
+  if mkdir -p "$(dirname "$EXCL")" 2>/dev/null; then
+    touch "$EXCL" 2>/dev/null
+    grep -qxF '/skills/' "$EXCL" 2>/dev/null || echo '/skills/' >> "$EXCL" 2>/dev/null
+    echo "[ok] /skills/ kept out of git via .git/info/exclude (install-maintained)"
+  fi
+fi
 
 # ------------------------------------------------- step 5: package refresh --
 # NOTE: guard on $KIT (round-11 F3 fix — the v3.0.1 installer guarded on $PROJ

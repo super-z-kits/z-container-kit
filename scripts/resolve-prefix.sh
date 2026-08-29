@@ -37,10 +37,12 @@ _resolve_prefix() {
   fi
 
   PROJ="${ZK_PROJ:-/home/z/my-project}"
+  local USK="${ZK_USK:-/home/user_skills}"   # scratch-testing override
+  local SYNC="${ZK_SYNC:-/home/sync}"        # scratch-testing override
 
   # (2) Legacy per-project discovery via /home/user_skills/*-config.env
   local configs count
-  configs=$(ls /home/user_skills/*-config.env 2>/dev/null || true)
+  configs=$(ls "$USK"/*-config.env 2>/dev/null || true)
   count=$(printf '%s\n' "$configs" | grep -c . 2>/dev/null || echo 0)
   if [ "$count" = "1" ]; then
     # Single config — unambiguous, use it
@@ -63,7 +65,7 @@ _resolve_prefix() {
   local existing_prefix=""
   # (3a) Scan /home/sync/*-state.env (recycle detector files — per-chat but
   #      reflect whatever prefix was last zsave'd in this chat)
-  for f in /home/sync/*-state.env; do
+  for f in "$SYNC"/*-state.env; do
     [ -f "$f" ] || continue
     # state.env is parsed with sed (never sourced); ZK_PREFIX= is one of the keys
     p=$(sed -n 's/^ZK_PREFIX=//p' "$f" 2>/dev/null | head -1)
@@ -74,7 +76,7 @@ _resolve_prefix() {
   done
   # (3b) Scan /home/sync/*-snapshots/ dirs (per-chat, but reveal prior prefixes)
   if [ -z "$existing_prefix" ]; then
-    for d in /home/sync/*-snapshots; do
+    for d in "$SYNC"/*-snapshots; do
       [ -d "$d" ] || continue
       # dir name format: <prefix>-snapshots
       p=$(basename "$d" | sed -E 's/-snapshots$//')
@@ -86,7 +88,7 @@ _resolve_prefix() {
   fi
   # (3c) Scan /home/user_skills/*-remote.url (cross-chat, PolarFS — most durable)
   if [ -z "$existing_prefix" ]; then
-    for f in /home/user_skills/*-remote.url; do
+    for f in "$USK"/*-remote.url; do
       [ -f "$f" ] || continue
       p=$(basename "$f" | sed -E 's/-remote\.url$//')
       if [ -n "$p" ] && [ "$p" != "*" ]; then
@@ -97,7 +99,7 @@ _resolve_prefix() {
   fi
   # (3d) Scan /home/user_skills/*-doppler.env (cross-chat, PolarFS)
   if [ -z "$existing_prefix" ]; then
-    for f in /home/user_skills/*-doppler.env; do
+    for f in "$USK"/*-doppler.env; do
       [ -f "$f" ] || continue
       p=$(basename "$f" | sed -E 's/-doppler\.env$//')
       if [ -n "$p" ] && [ "$p" != "*" ]; then
@@ -147,7 +149,7 @@ _resolve_prefix() {
     echo "ZK_PREFIX not discoverable. Set one of:" >&2
     echo "  (a) ZK_PREFIX=<name> bash <script>                          # explicit override" >&2
     echo "  (b) .agents/config in your repo: ZK_PREFIX=<name>           # canonical (run install.sh)" >&2
-    echo "  (c) echo 'ZK_PREFIX=<name>' > /home/user_skills/<name>-config.env  # legacy discovery" >&2
+    echo "  (c) echo 'ZK_PREFIX=<name>' > ${ZK_USK:-/home/user_skills}/<name>-config.env  # legacy discovery" >&2
     echo "  (d) git -C $PROJ remote add origin <url>                    # derive ZK_PREFIX from URL basename" >&2
     if [ "$count" -gt 1 ] 2>/dev/null; then
       echo "  (multiple config.env files found — pass ZK_PREFIX explicitly to disambiguate)" >&2

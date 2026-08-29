@@ -15,18 +15,19 @@ Fresh-chat recovery. The container boots as a bare platform template —
 and prints this same sequence). Two-and-a-half paths:
 
 **A. Nothing survived** (true cold start — you have a PAT and the kit repo
-URL, nothing else; `/home/user_skills` empty):
+URL, nothing else; `/home/user_skills` empty). Wire the remote BEFORE the
+kit install so the installer can derive ZK_PREFIX from the origin URL
+(nothing else exists to derive it from):
 
 ```
 git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit   # any scratch path works
-bash /tmp/my-project/kit/scripts/install.sh    # instantiates .agents/ + scripts/ shims (prompts or derives ZK_PREFIX)
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git   # the repo backing THIS workspace
 git -C /home/z/my-project fetch origin                                   # fetch first (DO NOT reset --hard yet)
 # F18 (audit): verify the remote is the one you expect BEFORE destructive reset.
 git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK the commits
 # if the commits match your expectation, proceed; if they look like the WRONG repo's history, STOP and ask the user
 git -C /home/z/my-project reset --hard origin/main   # restore the workspace (empty remote? skip)
-bash /tmp/my-project/kit/scripts/install.sh    # normalize .agents/ + shims post-restore (install strips any clone .git)
+bash /tmp/my-project/kit/scripts/install.sh    # instantiate .agents/ + shims (derives ZK_PREFIX from the origin URL; installs strips any clone .git)
 bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
 ```
 

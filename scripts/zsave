@@ -141,6 +141,7 @@ if [ -n "$(git status --porcelain)" ]; then
     printf '%s\n' "$SECRET_HITS" | sed 's/^/         /' >&2
     echo "       if these are real secrets, DO NOT commit (rotate + add to .git/info/exclude);" >&2
     echo "       if these are skill docs / examples (e.g. .secrets/SKILL.md), this is expected — proceed." >&2
+    echo "       (.env itself IS expected — law 9: git is the disk here)" >&2
   fi
   if git commit -q -m "${ZS_MSG:-"zsave $TS"}"; then
     echo "[ok] commit: $(git log --oneline -1 | mask)"

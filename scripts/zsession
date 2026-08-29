@@ -39,6 +39,7 @@ mask() { sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g; 
 
 PROJ="${ZK_PROJ:-/home/z/my-project}"
 SYNC="${ZK_SYNC:-/home/sync}"
+USK="${ZK_USK:-/home/user_skills}"   # scratch-testing override (package-presence check)
 STATE="$SYNC/${PREFIX}-state.env"
 LIVE=0; [ "$PROJ" = "/home/z/my-project" ] && LIVE=1
 line() { printf '\n---------------- %s ----------------\n' "$1"; }
@@ -50,6 +51,8 @@ UP="$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)"
 echo "booted: $((UP / 60)) min ago (a container recycle resets this)"
 echo "hostname: $(hostname)"
 for m in "$SYNC" /tmp/my-project "$PROJ/upload"; do
+  # scratch mode: $PROJ/upload is a live-project concept — skip the noise
+  case "$m" in "$PROJ/upload") [ "$LIVE" = 1 ] || continue ;; esac
   P=".${PREFIX}-rw-$$"
   if [ -d "$m" ] && touch "$m/$P" 2>/dev/null; then
     rm -f "$m/$P"; echo "$m: writable"
@@ -188,7 +191,7 @@ line "kit presence"
 for p in "$PROJ/.agents/SKILL.md" "$PROJ/.agents/config" \
          "$PROJ/.agents/scripts/zsave" "$PROJ/scripts/zsave" \
          "$PROJ/skills/z-container/SKILL.md" \
-         "/home/user_skills/z-container-kit"; do
+         "$USK/z-container-kit"; do
   [ -e "$p" ] && echo "present: $p" || echo "MISSING: $p"
 done
 for legacy in "$PROJ/z-container-kit" "$SYNC/z-container-kit"; do

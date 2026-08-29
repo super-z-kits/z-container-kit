@@ -44,9 +44,15 @@ bash /home/z/my-project/scripts/zsession
 Read-only report: uptime, mount writability, recycle detection, git status/remote/
 worktrees, watchdog hygiene, services, kit presence, numbered recommended actions.
 Follow its advice. If `scripts/` is empty you are in a fresh chat whose workspace
-is the boot template — go straight to step 4 (cold start) below. (Fallback if
-scripts/ exists but a helper is missing: `bash /home/z/my-project/.agents/scripts/zsession`.)
-Fresh-chat recovery detail (paths A/B, credential-file shortcut, branch-rename,
+is the boot template — run the surviving package copy first (it works
+pre-recovery and prints the cold-start sequence + the masked credential-file
+URL), then go straight to step 4 below:
+```bash
+bash /home/user_skills/z-container-kit/scripts/zsession
+```
+(Fallback if scripts/ exists but a helper is missing:
+`bash /home/z/my-project/.agents/scripts/zsession`.)
+Fresh-chat recovery detail (paths A/B/C, credential-file shortcut, branch-rename,
 env-override testing): `kb/session-recovery.md`.
 
 **2. Verify you're on `main` (watchdog hygiene):**
@@ -67,26 +73,31 @@ then `git show <last-commit-that-had-it>:worklog.md > worklog.md` — do NOT
 start a blank file if history still has the content.
 
 **4. If the workspace is the boot template** (single "Initial commit", no
-worklog, `scripts/` empty) — cold start:
-
-Cold start (5 commands — verify origin/main commits BEFORE `reset --hard`):
+worklog, `scripts/` empty) — cold start. Wire the remote BEFORE the kit
+install so the installer can derive `ZK_PREFIX` from the origin URL
+(nothing else exists to derive it from on a true cold start):
 
 ```
 git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit
-bash /tmp/my-project/kit/scripts/install.sh
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git
 git -C /home/z/my-project fetch origin
 git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK before reset
 git -C /home/z/my-project reset --hard origin/main     # skip if remote is empty/new
-bash /tmp/my-project/kit/scripts/install.sh            # LOAD-BEARING: restores skills/ (git-ignored)
+bash /tmp/my-project/kit/scripts/install.sh            # LOAD-BEARING: instantiates .agents/ (+config with ZK_PREFIX), scripts/ shims, skills/ symlink
 bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
 ```
+
+After recovery `ZK_PREFIX` lives in `/home/z/my-project/.agents/config` —
+read it with `source /home/z/my-project/.agents/config` before using
+`${ZK_PREFIX}` anywhere in your shell (each bash toolcall is a fresh subshell).
 
 PAT is typed exactly once (the remote-add line). The kit repo is public — clone
 needs no PAT. Two alternatives for the remote-add step:
 
 - **B1 — credential file survived** (most common in Path B): replace the
-  remote-add with `git remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`.
+  remote-add with `git remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`
+  (the prefix is the filename part before `-remote.url` — there is exactly one
+  per project; `ls /home/user_skills/*-remote.url` lists what survived).
   Still run the sanity-check log line — a stale credential file (audit F16)
   can silently point at a different repo.
 - **B2 — no PAT, no credential file, but Doppler vault has GH_PAT** (Path C,
@@ -110,7 +121,7 @@ the topic is relevant.
 
 1. **Stay on `main` in `/home/z/my-project` — the watchdog silently reverts your files.** Before every toolcall, the platform runs `git switch main`. If you're on another branch with a clean tree, your working files silently revert to main on the next toolcall — you won't know until you try to find your work. **Never `git checkout <branch>` inside `/home/z/my-project`.** For branch work, use a worktree: `git -C /home/z/my-project worktree add /tmp/my-project/worktrees/<name> -b feature/<x>`. For PRs, push without checkout: `git push origin main:feature/<x>`.
 
-2. **`zsave` after every milestone — GIT IS THE DISK, but push is only ONE of 4 backup layers.** `zsave` does all 4 in one command: (1) commit to local git, (2) push to GitHub (the only cross-chat persistence), (3) snapshot tar to `/home/sync/${ZK_PREFIX}-snapshots/` (per-chat, survives recycle + force-kill), (4) refresh `/home/sync/repo.tar` (the boot-restore artifact — a force-killed container comes back at your latest zsave). It also refreshes `${ZK_PREFIX}-remote.url` in `/home/sync/` + `/home/user_skills/` (cross-chat remote recovery). **Pushed = saved across all layers; unpushed = at risk in ALL layers.** Run after every meaningful change, before risky operations, and every ~10 toolcalls.
+2. **`zsave` after every milestone — GIT IS THE DISK, but push is only ONE of 4 backup layers.** `zsave` does all 4 in one command: (1) commit to local git, (2) push to GitHub (the only cross-chat persistence), (3) snapshot tar to `/home/sync/${ZK_PREFIX}-snapshots/` (per-chat, survives recycle + force-kill), (4) refresh `/home/sync/repo.tar` (the boot-restore artifact — a force-killed container comes back at your latest zsave). It also refreshes the `${ZK_PREFIX}-remote.url` credential file in `/home/user_skills/` (mode 0600 — the only copy since v3.1; cross-chat remote recovery). **Pushed = saved across all layers; unpushed = at risk in ALL layers.** Run after every meaningful change, before risky operations, and every ~10 toolcalls.
 
 3. **Never force push.** Local state can be faulty (watchdog reverts, workspace wipes, wrong work dir). `git push --force` overwrites the only copy with your possibly-broken local — the most deadly combination. If push is rejected, `git pull --rebase origin main` and re-push. Never `--force` without explicit user permission.
 
@@ -289,11 +300,12 @@ protect the main session.
   `git remote add origin https://<PAT>@github.com/<user>/<repo>.git`.
 - The kit never embeds tokens — project- and PAT-agnostic by construction [V].
   A PAT persists ONLY in container-local places: the origin URL in `.git/config`
-  (repo.tar boot-restore brings it back), the `${ZK_PREFIX}-remote.url` credential files
-  (zsave-maintained: `/home/sync/` + `/home/user_skills/`), and tar snapshots
+  (repo.tar boot-restore brings it back), the `${ZK_PREFIX}-remote.url` credential file
+  (zsave-maintained: `/home/user_skills/` only since v3.1, mode 0600), and tar snapshots
   of `.git`. NEVER in the GitHub repo, never in any kit file. Different PAT:
   `git remote set-url origin https://<PAT>@github.com/<u>/<r>.git`, then `zsave`.
-- `zsave`/`zsession` mask `ghp_…`-style tokens in ALL output. Never verify
+- `zsave`/`zsession` mask tokens in ALL output (`ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`/
+  `github_pat_` AND, since v3.1, `dp.pt.`/`dp.st.`/`cfat_`/`sbp_` prefixes). Never verify
   remotes with `git remote -v` in a transcript; use `git remote` (names only).
   Revoke anytime: github.com/settings/tokens. NEVER make the backup repo public
   (it contains `.env` and the worklog).
@@ -343,8 +355,10 @@ coverage). Namespace inference detail: `kb/persistence-namespaces.md`.
 ## Testing the helpers safely
 
 Helpers honor `ZK_PROJ` / `ZK_SYNC` env overrides so tests never touch the real
-`/home/sync` artifacts (an accidental real zsave would overwrite the boot-restore
-`repo.tar`). Scratch-test pattern: `kb/testing-helpers.md`.
+`/home/sync` artifacts, and `ZK_USK` so install.sh's package refresh and prefix
+discovery never touch the real `/home/user_skills` (an accidental real zsave
+would otherwise overwrite the boot-restore `repo.tar`, and prefix discovery
+would read your real config files). Scratch-test pattern: `kb/testing-helpers.md`.
 
 ## Helpers reference
 
@@ -371,6 +385,9 @@ across calls. Audit-callout detail per helper (F6, F8, F10, M7, M3, M4):
 `kb/helpers-audits.md`.
 
 ## DOPPLER_TOKEN_SEED callout
+
+(ZK_PREFIX comes from `.agents/config`: `source /home/z/my-project/.agents/config`
+first — each bash toolcall is a fresh subshell.)
 
 **Detection (R10-2 fix):** `zdoppler-smoke` filters out ALL `DOPPLER_*` keys,
 so the seed is invisible in the canonical verification output. You MUST sweep
@@ -418,19 +435,30 @@ DON'T
 
 ## New project setup (rare — only when a repo has never used this kit)
 
-The only time you run the installer on purpose. Everything is automated:
+The rare path: instantiating the kit into a repo for the first time. (The
+installer also runs during cold-start recovery — that's the common path, see
+the MUST-READ section above.) Everything is automated, but you MUST name the
+project explicitly so you never inherit another project's prefix:
 
 ```bash
-bash /home/user_skills/z-container-kit/scripts/install.sh
+ZK_PREFIX=<your-project-name> bash /home/user_skills/z-container-kit/scripts/install.sh
 ```
 
 It instantiates the kit into `.agents/` (SKILL.md + scripts/ + kb/ + evidence/),
-writes `.agents/config` with your `ZK_PREFIX` (taken from the `ZK_PREFIX` env
-var, or migrated from an existing `/home/user_skills/*-config.env`, or derived
-from the origin URL basename, or it prompts you), creates the `scripts/` shims
-and the `skills/z-container/SKILL.md` discovery symlink, and refreshes the
-read-only package + portable zip in `/home/user_skills/`. On re-runs it
-UPGRADES in place and always preserves `.agents/config`.
+writes `.agents/config` with your `ZK_PREFIX`, creates the `scripts/` shims
+and the `skills/z-container/SKILL.md` discovery symlink (keeping `skills/`
+out of git via `.git/info/exclude`), and refreshes the read-only package +
+portable zip in `/home/user_skills/`. On re-runs it UPGRADES in place and
+always preserves `.agents/config`.
+
+If you forget `ZK_PREFIX`, the installer auto-discovers one (legacy
+`/home/user_skills/*-config.env` migration, durable-artifact scan, or origin-URL
+basename) and WARNS — if it picked another project's prefix, fix it with:
+```bash
+rm /home/z/my-project/.agents/config && ZK_PREFIX=<name> bash /home/user_skills/z-container-kit/scripts/install.sh
+```
+(env-var re-runs alone cannot override an existing `.agents/config` —
+preservation always wins; that is what makes upgrades safe.)
 
 Then commit the kit so it travels with the repo:
 ```bash
@@ -455,8 +483,9 @@ Detail, edge cases, and the multi-project rationale: `kb/new-project.md`.
   .agents/config                     ZK_PREFIX=<project-name>  <- survives boot
 /home/z/my-project/scripts/          git-tracked shims -> exec .agents/scripts/<name>
 /home/z/my-project/skills/z-container/SKILL.md   symlink -> ../../.agents/SKILL.md
-                                     (platform discovery; skills/ is git-ignored,
-                                      so install.sh recreates it after a reset)
+                                     (platform discovery; skills/ is kept out of git
+                                      via .git/info/exclude — install.sh maintains
+                                      it and recreates the symlink after a reset)
 /home/z/my-project/.env              DATABASE_URL only — boot-MANAGED, gets rewritten
 /home/user_skills/${ZK_PREFIX}-*     credential files (never committed)
 ```
@@ -480,8 +509,9 @@ symlinks; `exec bash` keeps a single process and forwards the exit code.
 - `kb/networking.md` — ports, Caddy, XTransformPort, egress detail
 - `kb/dev-server-database.md` — :3000 dev server, Prisma + SQLite detail
 - `kb/secrets-audits.md` — F11/F13/F18/F21/F12/F15 audit callouts
-- `kb/sub-agents.md` — Task tool, worklog protocol (container-specific)
-- `kb/terminal-lockout.md` — the irreversible caddy/port-loop 403 hazard
+- `kb/sub-agents.md` — Task tool usage + the worklog protocol (container-specific)
+- `kb/terminal-lockout.md` — the irreversible caddy/port-loop 403 hazard (deep dive)
+- `kb/troubleshooting.md` — debugging trees for common symptoms
 - `kb/helpers-audits.md` — per-helper audit callouts (F6/F8/F10/M7/M3/M4)
 - `kb/doppler-token-seed.md` — PT-in-vault warning + detection policy
 - `kb/testing-helpers.md` — safe scratch testing of zsave/zsession
