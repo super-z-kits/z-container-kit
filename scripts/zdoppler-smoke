@@ -18,6 +18,8 @@
 #   zdoppler-smoke --show-values     # ALSO print secret values (DANGER: leaks to transcript)
 
 set -euo pipefail
+# Auto-discover ZK_PREFIX from /home/user_skills/*-config.env (durable — survives recycle)
+source "$(dirname "$0")/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
 
 ENV_FILE="${ZK_DOPPLER_ENV:-/home/user_skills/${PREFIX}-doppler.env}"
 

@@ -18,6 +18,7 @@ import urllib.request
 SECRETS = "/tmp/my-project/doppler-secrets.json"
 # No hardcoded repo — use env var or CLI arg. Fail loudly if neither is provided.
 REPO = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VERIFY_REPO", "")
+ if not os.environ.get("ZK_PREFIX"): print("ZK_PREFIX not set — see SKILL.md"); sys.exit(1)
 
 
 def req(url, headers, timeout=30):
@@ -37,7 +38,7 @@ def req(url, headers, timeout=30):
 
 def check_github(tok):
     print("\n========== GITHUB (GH_PAT from Doppler) ==========")
-    h = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json", "User-Agent": os.environ.get("ZK_PREFIX", "agent") + "-verify"}
+    h = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json", "User-Agent": os.environ.get("ZK_PREFIX") + "-verify"}
     code, me = req("https://api.github.com/user", h)
     if code == 200:
         print(f"  token valid — login: {me.get('login')} (id ...{str(me.get('id'))[-4:]})")
@@ -103,7 +104,7 @@ def check_cloudflare(key):
 def check_supabase(tok):
     print("\n========== SUPABASE (SUPABASE_TOKEN from Doppler (config from env file)) ==========")
     h = {"Authorization": f"Bearer {tok}"}
-    h = {"Authorization": f"Bearer {tok}", "User-Agent": os.environ.get("ZK_PREFIX", "agent") + "-verify"}  # audit M3: custom UA to bypass Supabase CF WAF
+    h = {"Authorization": f"Bearer {tok}", "User-Agent": os.environ.get("ZK_PREFIX") + "-verify"}  # audit M3: custom UA to bypass Supabase CF WAF
     # audit M3: api.supabase.com is fronted by Cloudflare WAF; default urllib UA → 403.
     # Always send a custom User-Agent. (GitHub section already does this.)
     code, projs = req("https://api.supabase.com/v1/projects", h)

@@ -12,7 +12,10 @@ import stat
 import sys
 import urllib.request
 
-import os; PREFIX = os.environ.get("ZK_PREFIX"); ENV_FILE = f"/home/user_skills/{PREFIX}-doppler.env" if PREFIX else None
+import os; PREFIX = os.environ.get("ZK_PREFIX")
+if not PREFIX:
+    import sys; print("ZK_PREFIX not set — see SKILL.md First-time setup"); sys.exit(1)
+ENV_FILE = f"/home/user_skills/{PREFIX}-doppler.env"
 OUT_JSON = "/tmp/my-project/doppler-secrets.json"
 API = "https://api.doppler.com/v3"
 

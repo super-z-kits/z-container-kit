@@ -2,7 +2,7 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "2.6.0"
+  version: "2.7.2"
   verified: "2026-08-28 (live experiments + 5 validation rounds; see evidence/EXPERIMENTS.md)"
 description: >
   Survival guide for the sandbox container. Verified mechanics of the
@@ -47,15 +47,20 @@ chat), reinstall from any copy: `bash <kit>/scripts/install.sh`.
 
 ## First-time setup: set ZK_PREFIX (no default — scripts fail loudly if missing)
 
-All kit credential files, snapshots, and state files are named with a prefix to avoid collision with other projects in `/home/user_skills/` and `/home/sync/`. The prefix is NOT hardcoded — you MUST set it during first-time setup:
+All kit credential files, snapshots, and state files are named with a prefix to avoid collision with other projects in `/home/user_skills/` and `/home/sync/`. The prefix is NOT hardcoded — you MUST set it during first-time setup.
+
+**Do NOT store ZK_PREFIX in `.env`** — the platform rewrites `.env` on every recycle, wiping your config. Instead, create a durable config file in `/home/user_skills/` (per-user, survives recycle + force-kill + probably cross-chat):
 
 ```bash
-# Add to /home/z/my-project/.env (committed to git — law 9):
-echo 'ZK_PREFIX=<your-project-name>' >> /home/z/my-project/.env
-# e.g. ZK_PREFIX=myapp
+echo 'ZK_PREFIX=<your-project-name>' > /home/user_skills/<your-project-name>-config.env
+chmod 0600 /home/user_skills/<your-project-name>-config.env
+# e.g. ZK_PREFIX=myapp -> /home/user_skills/myapp-config.env
 ```
 
-This creates files like `/home/user_skills/myapp-doppler.env`, `/home/sync/myapp-snapshots/`, etc. If `ZK_PREFIX` is not set, every kit script will fail with: `ZK_PREFIX not set — see SKILL.md "First-time setup"`.
+Scripts auto-discover ZK_PREFIX by globbing `/home/user_skills/*-config.env`:
+- Exactly one file -> use it automatically
+- Zero files -> fail with: `ZK_PREFIX not configured — no /home/user_skills/*-config.env found`
+- Multiple files -> fail with a list; set `ZK_PREFIX=<prefix>` in the environment to disambiguate
 
 **⚠️ Parallel sessions (R10-13):** `/home/user_skills/` is **per-user, shared
 across concurrent chats**. The platform runs 2-3 concurrent sessions under the

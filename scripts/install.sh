@@ -22,10 +22,8 @@
 # then wire the workspace remote (see SKILL.md "Session start") and re-run
 # install.sh once more from the clone so every copy matches the latest kit.
 set -uo pipefail
-# Source .env to get ZK_PREFIX
-PROJ_PRE="${ZK_PROJ:-/home/z/my-project}"
-[ -f "$PROJ_PRE/.env" ] && set -a && source "$PROJ_PRE/.env" 2>/dev/null && set +a
-PREFIX="${ZK_PREFIX:?ZK_PREFIX not set — see SKILL.md}"
+# Auto-discover ZK_PREFIX from /home/user_skills/*-config.env (durable — survives recycle)
+source "$(dirname "$0")/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -98,7 +96,7 @@ copy_into() {  # copy_into <dest-dir> — atomic swap; self-install aware
 copy_into "$PROJ/skills/z-container"
 
 mkdir -p "$PROJ/scripts"
-for s in zsave zsession daemonize.py install.sh wdt_watch.py zremote zdoppler-smoke zkit-selftest zcleanup-backups doppler_fetch.py verify_access.py; do
+for s in resolve-prefix.sh zsave zsession daemonize.py install.sh wdt_watch.py zremote zdoppler-smoke zkit-selftest zcleanup-backups doppler_fetch.py verify_access.py; do
   if [ -f "$KIT/scripts/$s" ]; then
     cp -f "$KIT/scripts/$s" "$PROJ/scripts/$s" && chmod 0755 "$PROJ/scripts/$s" || INSTALL_FAIL=1
   fi

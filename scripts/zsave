@@ -26,14 +26,8 @@
 # exit:   0 saved (push failure warns but exits 0); 1 if commit/snapshot/
 #         repo.tar failed; 75 if another zsave holds the lock.
 set -uo pipefail
-# Source .env to get ZK_PREFIX and other project config (law 9: .env is committed to git)
-PROJ_PRE="${ZK_PROJ:-/home/z/my-project}"
-[ -f "$PROJ_PRE/.env" ] && set -a && source "$PROJ_PRE/.env" 2>/dev/null && set +a
-
-# ZK_PREFIX must be set — no default. Set it in /home/z/my-project/.env during
-# initial setup (e.g. ZK_PREFIX=myproject). All kit files use this prefix to
-# avoid collision with other projects in /home/user_skills/ and /home/sync/.
-PREFIX="${ZK_PREFIX:?ZK_PREFIX not set — see SKILL.md "First-time setup". Add ZK_PREFIX=<your-project> to /home/z/my-project/.env}"
+# Auto-discover ZK_PREFIX from /home/user_skills/*-config.env (durable — survives recycle)
+source "$(dirname "$0")/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
 
 PROJ="${ZK_PROJ:-/home/z/my-project}"
 SYNC="${ZK_SYNC:-/home/sync}"

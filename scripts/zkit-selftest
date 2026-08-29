@@ -21,6 +21,8 @@
 # Requires: GH_PAT env var (typically fetched from Doppler per secrets-vault kit).
 
 set -euo pipefail
+# Auto-discover ZK_PREFIX from /home/user_skills/*-config.env (durable — survives recycle)
+source "$(dirname "$0")/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
 
 # Parse args
 KEEP=0
