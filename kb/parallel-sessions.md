@@ -9,7 +9,7 @@ all your concurrent sessions share the same directory. This is a huge boon
 
 ### What can go wrong
 
-1. **Silent overwrites**: session A writes `zk-doppler.env` with a fresh PT;
+1. **Silent overwrites**: session A writes `${ZK_PREFIX}-doppler.env` with a fresh PT;
    session B's older copy is silently replaced. The "fresh paste wins" rule
    means the last writer wins — no atomicity, no session attribution.
 2. **Push divergence**: session A and session B both `zsave` to the same
@@ -17,7 +17,7 @@ all your concurrent sessions share the same directory. This is a huge boon
    Per law 2 (never force-push), resolve with `git pull --rebase origin main`.
 3. **Phantom file writes**: a parallel session's write to `/home/user_skills/`
    appears in *your* container's filesystem — e.g. a timestamp on
-   `zk-doppler.env` that you didn't write.
+   `${ZK_PREFIX}-doppler.env` that you didn't write.
 4. **Contentious writes on shared kits**: if two sessions both run `install.sh`
    or update the same kit, the last writer wins. For truly shared resources
    (secret vault, common agent skills), this could clobber concurrent work.
@@ -40,7 +40,7 @@ all your concurrent sessions share the same directory. This is a huge boon
   file you're about to overwrite was recently modified by another session:
   `stat /home/user_skills/<file>` — if the mtime is more recent than your
   session start, another session may have written it.
-- **For shared credential files** (`zk-doppler.env`, `zk-remote.url`): treat
+- **For shared credential files** (`${ZK_PREFIX}-doppler.env`, `${ZK_PREFIX}-remote.url`): treat
   them as read-mostly. If you must write, preserve any fields you didn't
   set (e.g. don't blow away `DOPPLER_PT_STORED_AT` if it's already there).
 - **For kit installs**: running `install.sh` is idempotent and atomic

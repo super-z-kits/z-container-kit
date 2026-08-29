@@ -18,6 +18,6 @@ The kit ships these helpers in `scripts/`:
 
 **Also present (Python helpers from prior session, complementary):**
 - `doppler_fetch.py` — Python urllib version of `zdoppler-smoke`; stages secrets to `/tmp/my-project/doppler-secrets.json` (audit M7 staging pattern). Verifies PT via `/workplace` (avoids the M4 `/projects/project/<slug>` 400 quirk).
-- `verify_access.py` — Python urllib access verifier for GitHub / Cloudflare / Supabase. **NOTE (audit M3):** uses default urllib UA — will hit the Supabase WAF 403. Patched version should send `User-Agent: zk-verify` (the GitHub section already does this).
+- `verify_access.py` — Python urllib access verifier for GitHub / Cloudflare / Supabase. **NOTE (audit M3):** uses default urllib UA — will hit the Supabase WAF 403. Patched version should send `User-Agent: ${ZK_PREFIX}-verify` (the GitHub section already does this).
 
 Use bash helpers for quick one-shots; use Python helpers for multi-call verification flows that need to stage secrets across calls.

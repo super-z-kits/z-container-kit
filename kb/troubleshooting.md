@@ -9,7 +9,7 @@ Extracted from SKILL.md v2.3.3.
 1. `bash /home/z/my-project/scripts/zsession` — recycle? remote? worktrees?
 2. `git -C /home/z/my-project log --all --oneline` — refs still there? Nothing
    committed is ever lost. `git fsck --lost-found` for dangling commits.
-3. `/home/sync/repo.tar` + `/home/sync/zk-snapshots/` — if the tree is stale,
+3. `/home/sync/repo.tar` + `/home/sync/${ZK_PREFIX}-snapshots/` — if the tree is stale,
    follow "Restore procedures" B above (never extract over a live .git).
 4. Remote is truth: `git fetch && git log origin/main --oneline -3`.
 
@@ -24,7 +24,7 @@ Bad PAT: rotate at github.com/settings/tokens, then
 again (script output is PAT-masked either way). Repo renamed (pushes keep
 working via GitHub redirects, but keep it clean): `git remote set-url origin
 https://<PAT>@github.com/<u>/<NEW-NAME>.git` — the next successful zsave
-refreshes both `zk-remote.url` credential files automatically.
+refreshes both `${ZK_PREFIX}-remote.url` credential files automatically.
 
 **"Dirty tree right after boot — mode-only changes (0644 → 0755)"** — the
 platform's repo.tar extraction does not preserve file modes; every file

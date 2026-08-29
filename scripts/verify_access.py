@@ -18,7 +18,7 @@ import urllib.request
 SECRETS = "/tmp/my-project/doppler-secrets.json"
 # No hardcoded repo — use env var or CLI arg. Fail loudly if neither is provided.
 REPO = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VERIFY_REPO", "")
- if not os.environ.get("ZK_PREFIX"): print("ZK_PREFIX not set — see SKILL.md"); sys.exit(1)
+if not os.environ.get("ZK_PREFIX"): print("ZK_PREFIX not set — see SKILL.md"); sys.exit(1)
 
 
 def req(url, headers, timeout=30):

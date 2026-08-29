@@ -4,10 +4,10 @@ F11 (ossfs 0777 mode), F13 (mode-printing), F18 (recovery pre-flight),
 F21 (app secrets → Doppler), F12/F15 (UUID commits).
 Extracted from SKILL.md v2.3.3.
 - **Files under `/home/sync/` come back mode 0777** (audit F11) — ossfs
-  ignores `chmod`. The `zk-remote.url` credential file there is technically
+  ignores `chmod`. The `${ZK_PREFIX}-remote.url` credential file there is technically
   world-readable. This is expected on the single-user Super Z container
   (only user `z` exists) and not a leak in practice; the canonical posture is
-  the mode-0600 copy in `/home/user_skills/zk-remote.url`. `zsave` now prints
+  the mode-0600 copy in `/home/user_skills/${ZK_PREFIX}-remote.url`. `zsave` now prints
   the file mode in its `[ok] credential file: ... (mode <NNN>, ...)` line so
   the discrepancy is visible (audit F13).
 - **`.env` is committed by design (law 9), but app secrets belong in

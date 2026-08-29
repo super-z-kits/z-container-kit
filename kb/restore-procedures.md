@@ -18,7 +18,7 @@ substitute your scratch project + `ZK_SYNC` scratch dir and run the same steps:
 1. Quarantine the old repo state:
    `mv /home/z/my-project/.git /tmp/my-project/.git.quarantine-$$`
 2. Extract the newest snapshot (error if none — fall back to C):
-   `LATEST=$(ls -t /home/sync/zk-snapshots/proj-*.tar 2>/dev/null | head -1); [ -n "$LATEST" ] && tar xf "$LATEST" -C /home/z/my-project`
+   `LATEST=$(ls -t /home/sync/${ZK_PREFIX}-snapshots/proj-*.tar 2>/dev/null | head -1); [ -n "$LATEST" ] && tar xf "$LATEST" -C /home/z/my-project`
 3. Gitdir relocation variant: the timestamp-matched pair is
    `proj-<ts>.tar` <-> `gitdir-<ts>.tar`. **Only restore `gitdir-<ts>.tar` if
    `/tmp/my-project/gitdirs/` was actually lost** — if the surviving gitdir is
@@ -34,8 +34,8 @@ substitute your scratch project + `ZK_SYNC` scratch dir and run the same steps:
    so repo.tar reflects the restored state.
 
 **C. Fresh chat / empty /home/sync:** `git clone` into my-project fails (the
-boot template is not empty). Recover the URL from a surviving `zk-remote.url`
-credential file (`git remote add origin "$(cat /home/user_skills/zk-remote.url)"`),
+boot template is not empty). Recover the URL from a surviving `${ZK_PREFIX}-remote.url`
+credential file (`git remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`),
 else ask the user for the PAT and re-add by hand (verify with `git remote` —
 names only, never `git remote -v`); then `git fetch && git reset --hard
 origin/main`, then `bash z-container-kit/scripts/install.sh` (skills/

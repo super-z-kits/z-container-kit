@@ -30,14 +30,14 @@ transcript via the user's message, and every helper masks it from here on
 needs no PAT — the kit repo is public.
 
 **B. Something survived** (credential file or kit copy in `/home/user_skills`):
-recover the remote — every successful `zsave` writes a `zk-remote.url`
+recover the remote — every successful `zsave` writes a `${ZK_PREFIX}-remote.url`
 credential file to `/home/sync/` and `/home/user_skills/` (holds the origin
 URL with embedded PAT — never print its contents; verify remotes with
 `git remote` — NAMES ONLY — since `git remote -v` prints the PAT into the
 transcript). If one survived, **first run `zsession`** — it now prints the
 credential file's masked URL (audit F17) so you can sanity-check it BEFORE
 recovery. Then:
-`git remote add origin "$(cat /home/user_skills/zk-remote.url)"`.
+`git remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`.
 **Before `git reset --hard`**: `git fetch && git log origin/main --oneline -5`
 to verify the commits are the ones you expect — a stale credential file (audit
 F16) can silently point at a different repo, and `git reset --hard` would
