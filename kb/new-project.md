@@ -1,10 +1,12 @@
-# New project setup (rare) — instantiating the kit into a new repo
+# New project setup — instantiating the kit into a repo that has never used it
 
-> SCOPE: this module is about **new repos/projects** — the rare case where a
-> workspace has never used this kit (or you are deliberately adopting it in a
-> fresh repo). If you are starting a new SESSION in a repo that already has
-> `.agents/`, you want the MUST-READ section of SKILL.md (or
-> `kb/session-recovery.md` if the workspace needs recovery) instead.
+> SCOPE: you are here when the project has NEVER used this kit — no `.agents/`
+> in the workspace and no backup-repo history carrying one. What TRIGGERS
+> this flow: a brand-new workspace whose backup repo is empty or newly
+> created, or deliberately adopting the kit into an existing repo that
+> predates it. What does NOT trigger it: starting a new session on a project
+> that already has the kit — that project's setup is already done; RESTORE it
+> instead (SKILL.md MUST-READ / `kb/session-recovery.md`).
 
 ## When you are here
 

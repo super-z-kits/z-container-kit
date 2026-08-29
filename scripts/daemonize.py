@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """daemonize.py — survive the per-toolcall process cull via double-fork.
-(kit v2.3.2)
+(kit v3.1.5)
 
 Every bash toolcall's descendant tree is killed when the toolcall ends. A
 double-forked process reparents to PID 1 (tini) and escapes the cull.

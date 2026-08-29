@@ -366,3 +366,28 @@ credential-copy write eliminated (mode-0777 PAT leak), kit masker extended
 to dp.pt/dp.st/cfat/sbp, ZK_USK scratch override). The 4-copy kit sprawl
 is now 2 copies: the instantiated .agents/ and the read-only
 /home/user_skills package.
+
+**v3.1.5 (2026-08-29, user-review round):** language + flow-direction fixes from
+the merged-PR #2 review session's findings (F3-F7) and the owner's inline
+comments. (1) "Milestone" now explicitly means a MICRO-milestone — every good
+moment, as granular as possible — in both rules/laws, the zsave section,
+kb/zsave-internals.md, and the helper output lines; the docs now say outright
+that waiting for a grand final save moment is how work gets lost. (2) The
+rules-vs-laws duplication is resolved: laws 2/3 now reference rules 1/2 as
+their mechanism instead of restating them. (3) The misleading "100% case" /
+"rare path" probability framing is replaced by an explicit two-flow decision
+block at the top of the MUST-READ (existing project -> RESTORE vs new repo ->
+SET UP, with the `ls .agents` trigger check); kb/session-recovery.md and
+kb/new-project.md scope blocks now state triggers instead of frequencies.
+(4) The cold-start flow now starts from the LOCAL package at
+/home/user_skills/z-container-kit/ (per-user, survives new chats) and only
+falls back to cloning github.com/super-z-kits/z-container-kit when the package
+is absent — in SKILL.md, README.md, and kb/session-recovery.md Path A; the
+SKILL.md header reframes the raw.githubusercontent.com URL as fallback, not
+entry point. (5) Code fixes from the external review: resolve-prefix.sh tier
+3e warns on multiple config.env files instead of tie-breaking silently (F3)
+and the count computation no longer produces "0\n0" (F6); the exclude writers
+in install.sh and zsave use --git-common-dir so linked worktrees honor them
+(F5); doppler_fetch.py and verify_access.py honor ZK_USK/ZK_PROJ overrides
+(F4); the duplicated parallel-sessions header is deduped (F7); README version
+note un-skewed and its PAT "step 2" off-by-one fixed.

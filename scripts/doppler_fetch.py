@@ -2,7 +2,7 @@
 """doppler_fetch.py — verify Doppler PT and pull secrets from the vault.
 
 Follows secrets-vault-kit conventions:
-- PT sourced from /home/user_skills/{}-doppler.env (0600, outside git tree)
+- PT sourced from ${ZK_USK:-/home/user_skills}/{}-doppler.env (0600, outside git tree)
 - Secrets JSON written to /tmp/my-project/doppler-secrets.json (0600) — never into git
 - stdout shows only secret NAMES + value LENGTHS, never values
 """
@@ -13,10 +13,12 @@ import sys
 import urllib.request
 
 import os, sys, glob
+USK = os.environ.get("ZK_USK", "/home/user_skills")      # scratch-testing override (PR#2 F4)
+PROJ = os.environ.get("ZK_PROJ", "/home/z/my-project")   # scratch-testing override (PR#2 F4)
 PREFIX = os.environ.get("ZK_PREFIX")
 if not PREFIX:
     # v3.1: .agents/config (instantiated kit) takes priority
-    for cand in ("/home/z/my-project/.agents/config",):
+    for cand in (os.path.join(PROJ, ".agents/config"),):
         try:
             with open(cand) as f:
                 for line in f:
@@ -29,9 +31,9 @@ if not PREFIX:
             pass
 if not PREFIX:
     # Auto-discover from /home/user_skills/*-config.env (like resolve-prefix.sh)
-    configs = glob.glob("/home/user_skills/*-config.env")
+    configs = glob.glob(os.path.join(USK, "*-config.env"))
     if len(configs) == 0:
-        print("ZK_PREFIX not configured — no .agents/config and no /home/user_skills/*-config.env found")
+        print(f"ZK_PREFIX not configured — no {PROJ}/.agents/config and no {USK}/*-config.env found")
         print("See SKILL.md 'New project setup'")
         sys.exit(1)
     elif len(configs) > 1:
@@ -46,7 +48,7 @@ if not PREFIX:
         if not PREFIX:
             print(f"ZK_PREFIX not set in {configs[0]}")
             sys.exit(1)
-ENV_FILE = f"/home/user_skills/{PREFIX}-doppler.env"
+ENV_FILE = os.path.join(USK, f"{PREFIX}-doppler.env")
 OUT_JSON = "/tmp/my-project/doppler-secrets.json"
 API = "https://api.doppler.com/v3"
 
@@ -73,7 +75,12 @@ def api_get(url, token):
 
 
 def main():
-    env = load_env(ENV_FILE)
+    try:
+        env = load_env(ENV_FILE)
+    except FileNotFoundError:
+        print(f"env file not found: {ENV_FILE}")
+        print("Create it first (secrets-vault-kit onboarding): DOPPLER_PT / DOPPLER_PROJECT / DOPPLER_CONFIG, mode 0600")
+        sys.exit(1)
     pt = env.get("DOPPLER_PT", "")
     project = env.get("DOPPLER_PROJECT")
     if not project:

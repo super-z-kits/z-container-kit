@@ -19,9 +19,11 @@ SECRETS = "/tmp/my-project/doppler-secrets.json"
 # No hardcoded repo — use env var or CLI arg. Fail loudly if neither is provided.
 REPO = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VERIFY_REPO", "")
 # Resolve ZK_PREFIX: env var, then .agents/config (v3.1), then config.env glob
+USK = os.environ.get("ZK_USK", "/home/user_skills")      # scratch-testing override (PR#2 F4)
+PROJ = os.environ.get("ZK_PROJ", "/home/z/my-project")   # scratch-testing override (PR#2 F4)
 if not os.environ.get("ZK_PREFIX"):
     try:
-        with open("/home/z/my-project/.agents/config") as f:
+        with open(os.path.join(PROJ, ".agents/config")) as f:
             for line in f:
                 if line.startswith("ZK_PREFIX="):
                     os.environ["ZK_PREFIX"] = line.strip().split("=", 1)[1]
@@ -30,9 +32,9 @@ if not os.environ.get("ZK_PREFIX"):
         pass
 if not os.environ.get("ZK_PREFIX"):
     import glob
-    configs = glob.glob("/home/user_skills/*-config.env")
+    configs = glob.glob(os.path.join(USK, "*-config.env"))
     if len(configs) == 0:
-        print("ZK_PREFIX not configured — no .agents/config and no /home/user_skills/*-config.env found")
+        print(f"ZK_PREFIX not configured — no {PROJ}/.agents/config and no {USK}/*-config.env found")
         print("See SKILL.md 'New project setup'")
         sys.exit(1)
     elif len(configs) > 1:

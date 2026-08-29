@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zsave — one-command persistence for the Z container. (kit v3.1.4)
+# zsave — one-command persistence for the Z container. (kit v3.1.5)
 #
 #   0. maintain .git/info/exclude (uploads/logs/build junk stay out of git)
 #      + auto-exclude untracked NESTED git repos (scratch clones would
@@ -89,11 +89,13 @@ fi
 echo "== zsave $TS (UTC) =="
 
 # --- 0. keep regenerable junk out of git (affects UNTRACKED files only) -------
-GITDIR="$PROJ/.git"
-if [ -f "$GITDIR" ]; then  # gitdir-pointer variant: resolve real gitdir
-  GITDIR="$(sed -n 's/^gitdir: *//p' "$PROJ/.git" | tr -d '[:space:]')"
+GITDIR="$(git -C "$PROJ" rev-parse --git-common-dir 2>/dev/null || true)"
+if [ -n "$GITDIR" ]; then  # may be relative to $PROJ
+  case "$GITDIR" in /*) ;; *) GITDIR="$PROJ/$GITDIR" ;; esac
+else
+  GITDIR="$PROJ/.git"
 fi
-EXCL="$GITDIR/info/exclude"
+EXCL="$GITDIR/info/exclude"   # COMMON gitdir — linked worktrees read exclude from here (PR#2 F5)
 if mkdir -p "$(dirname "$EXCL")" 2>/dev/null; then
   touch "$EXCL" 2>/dev/null
   # strip legacy unanchored entries (they matched at ANY depth and silently
@@ -131,7 +133,7 @@ fi
 
 # --- 1. commit ----------------------------------------------------------------
 # F19: if the user passed an explicit message AND the tree is clean, create an
-# empty commit so the milestone is recorded in git history (otherwise the
+# empty commit so the checkpoint is recorded in git history (otherwise the
 # message argument was silently discarded).
 # m5 (audit): guardrail — warn (don't block) when staging files whose basename
 # matches secret-sounding patterns. Catches the ".secrets/" near-miss where an
@@ -348,4 +350,4 @@ git worktree prune 2>/dev/null
 
 # m4 (audit): final summary line includes push status, so agents that `tail -1`
 # don't miss the push result buried ~10 lines up.
-echo "== done (pushed=$PUSHED, snapshot=$(test -f "$SNAPDIR"/proj-$TS.tar && echo yes || echo no), repo.tar=$(test -f "$SYNC/repo.tar" && echo refreshed || echo missing)). next milestone -> zsave again =="
+echo "== done (pushed=$PUSHED, snapshot=$(test -f "$SNAPDIR"/proj-$TS.tar && echo yes || echo no), repo.tar=$(test -f "$SYNC/repo.tar" && echo refreshed || echo missing)). next micro-milestone -> zsave again =="

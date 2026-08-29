@@ -2,8 +2,8 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "3.1.4"
-  verified: "2026-08-29 (live experiments + 11 validation rounds; see evidence/EXPERIMENTS.md)"
+  version: "3.1.5"
+  verified: "2026-08-29 (live experiments + 12 validation rounds; see evidence/EXPERIMENTS.md)"
   description: >
     Survival guide for the sandbox container. The kit is instantiated into
     your repo at .agents/ (git-tracked; .agents/config carries ZK_PREFIX and
@@ -19,12 +19,14 @@ metadata:
 
 # Z-Container Survival Guide v3
 
-**Canonical raw URL:** `https://raw.githubusercontent.com/super-z-kits/z-container-kit/main/SKILL.md` — fetch directly, no GitHub-title inference.
-
-**Instantiated copy:** this file lives at `.agents/SKILL.md` in your repo
-(git-tracked — that is how it survives). The read-only package at
-`/home/user_skills/z-container-kit/` is the install source; if helpers are
-missing entirely (fresh chat, nothing restored), reinstall from any copy:
+**Read LOCAL copies first — the web is the fallback, not the flow.** This
+file lives at `.agents/SKILL.md` in your repo (git-tracked — that is how it
+survives) and in the read-only package at
+`/home/user_skills/z-container-kit/` (the install source — per-user storage
+that survives into new chats, observed live). Start every flow from one of
+those two local copies. Only if both are absent (a truly bare container):
+fetch `https://raw.githubusercontent.com/super-z-kits/z-container-kit/main/SKILL.md`
+directly (no GitHub-title inference) or clone the repo, and reinstall with
 `bash <kit>/scripts/install.sh`.
 
 Every claim is graded: **[V]** verified live 2026-08-28, **[S]** from `/start.sh`
@@ -33,9 +35,20 @@ deep-dive modules in `kb/` (read when the specific topic is relevant).
 
 ## New session — read this every time (MUST READ, inline, not optional)
 
-This is the 100% case: you are starting a session in a repo that already uses
-this kit. (Setting up a brand-new repo is the rare path — see "New project
-setup" near the end. The distinction matters; do not skip this section.)
+First, decide which of the two flows you are in — they are different, and
+picking the wrong one wastes work or damages config:
+
+- **Existing project** — this repo already uses the kit: an `.agents/`
+  directory is in the workspace (or restores from the backup repo). You are
+  RESTORING a session. This section is your flow.
+- **New project** — the repo has never used the kit: no `.agents/` anywhere,
+  and the backup repo has nothing to restore. You are SETTING UP. Go to
+  "New project setup" near the end instead.
+
+Check: `ls /home/z/my-project/.agents` — present means restore (below);
+absent with no backup-repo history means setup. Do not run the setup flow on
+an existing project (it can bake the wrong `ZK_PREFIX`), and do not run
+recovery on a brand-new repo (the remote has nothing to restore).
 
 **1. Run the situation report:**
 ```bash
@@ -81,12 +94,13 @@ install so the installer can derive `ZK_PREFIX` from the origin URL
 (nothing else exists to derive it from on a true cold start):
 
 ```
-git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit
+KIT=/home/user_skills/z-container-kit                 # LOCAL package FIRST (per-user, survives new chats)
+[ -f "$KIT/scripts/install.sh" ] || { git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit; KIT=/tmp/my-project/kit; }
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git
 git -C /home/z/my-project fetch origin
 git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK (brand-new/empty remote? origin/main doesn't exist yet — expected, move on)
 git -C /home/z/my-project reset --hard origin/main     # skip if remote is empty/new
-bash /tmp/my-project/kit/scripts/install.sh            # LOAD-BEARING: instantiates .agents/ (+config with ZK_PREFIX), scripts/ shims, skills/ symlink
+bash "$KIT/scripts/install.sh"                         # LOAD-BEARING: instantiates .agents/ (+config with ZK_PREFIX), scripts/ shims, skills/ symlink
 bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
 ```
 
@@ -94,10 +108,11 @@ After recovery `ZK_PREFIX` lives in `/home/z/my-project/.agents/config` —
 read it with `source /home/z/my-project/.agents/config` before using
 `${ZK_PREFIX}` anywhere in your shell (each bash toolcall is a fresh subshell).
 
-PAT is typed exactly once (the remote-add line). The kit repo is public — clone
-needs no PAT. Two alternatives for the remote-add step:
+PAT is typed exactly once (the remote-add line). The kit comes from the local
+package when it survived; the fallback clone needs no PAT (public repo). Two
+alternatives for the remote-add step:
 
-- **B1 — credential file survived** (most common in Path B): find it with
+- **B1 — credential file survived** (Path B's credential-file shortcut): find it with
   `ls /home/user_skills/*-remote.url` (the prefix is the filename part before
   `-remote.url` — there is one per project; `${ZK_PREFIX}` is not defined in
   your shell yet, so resolve the path first):
@@ -126,9 +141,13 @@ the topic is relevant.
 
 ## Rules you never break
 
+The five behaviors that keep a session alive. The ten laws further down
+state the container mechanisms behind them — where a rule and a law cover
+the same ground, the rule carries the detail and the law points back.
+
 1. **Stay on `main` in `/home/z/my-project` — the watchdog silently reverts your files.** Before every toolcall, the platform runs `git switch main`. If you're on another branch with a clean tree, your working files silently revert to main on the next toolcall — you won't know until you try to find your work. **Never `git checkout <branch>` inside `/home/z/my-project`.** For branch work, use a worktree: `git -C /home/z/my-project worktree add /tmp/my-project/worktrees/<name> -b feature/<x>`. For PRs, push without checkout: `git push origin main:feature/<x>`.
 
-2. **`zsave` after every milestone — GIT IS THE DISK, but push is only ONE of 4 backup layers.** `zsave` does all 4 in one command: (1) commit to local git, (2) push to GitHub (the only cross-chat persistence), (3) snapshot tar to `/home/sync/${ZK_PREFIX}-snapshots/` (per-chat, survives recycle + force-kill), (4) refresh `/home/sync/repo.tar` (the boot-restore artifact — a force-killed container comes back at your latest zsave). It also refreshes the `${ZK_PREFIX}-remote.url` credential file in `/home/user_skills/` (mode 0600 — the only copy since v3.1; cross-chat remote recovery). **Pushed = saved across all layers; unpushed = at risk in ALL layers.** Run after every meaningful change, before risky operations, and every ~10 toolcalls.
+2. **`zsave` after every MICRO-milestone — and "milestone" means as micro as it gets.** A milestone is NOT "when the feature is done" — that grand final moment never arrives. It is every good moment: one file written, one bug fixed, one step verified, one experiment that worked. Save at that granularity. `zsave` covers all 4 backup layers in one command: (1) commit to local git, (2) push to GitHub (the only cross-chat persistence), (3) snapshot tar to `/home/sync/${ZK_PREFIX}-snapshots/` (per-chat, survives recycle + force-kill), (4) refresh `/home/sync/repo.tar` (the boot-restore artifact — a force-killed container comes back at your latest zsave). It also refreshes the `${ZK_PREFIX}-remote.url` credential file in `/home/user_skills/` (mode 0600 — the only copy since v3.1; cross-chat remote recovery). **Pushed = saved across all layers; unpushed = at risk in ALL layers.** Run at every micro-milestone, before risky operations, and every ~10 toolcalls.
 
 3. **Never force push.** Local state can be faulty (watchdog reverts, workspace wipes, wrong work dir). `git push --force` overwrites the only copy with your possibly-broken local — the most deadly combination. If push is rejected, `git pull --rebase origin main` and re-push. Never `--force` without explicit user permission.
 
@@ -139,8 +158,8 @@ the topic is relevant.
 ## The ten laws
 
 1. **Session starts with `bash /home/z/my-project/scripts/zsession`** — read its report before touching anything. If `scripts/` is empty (fresh-chat boot template), run the surviving copy at `/home/user_skills/z-container-kit/scripts/zsession` instead.
-2. **Work on `main` inside `/home/z/my-project`.** The watchdog runs `git switch main` before every toolcall; on main it is a no-op, on any other branch it reverts your working files.
-3. **End every milestone with `bash /home/z/my-project/scripts/zsave "msg"`** — commit + push + `/home/sync` snapshot + `repo.tar` refresh in one command.
+2. **Work on `main` inside `/home/z/my-project`** (rule 1's mechanism: the pre-toolcall `git switch main` is a no-op on main, a silent revert on any other branch).
+3. **All saves go through `zsave`, at micro-milestone granularity** (rule 2's mechanism: one command = commit + push + `/home/sync` snapshot + `repo.tar` refresh). No ad-hoc partial saves; no waiting for a "finished" state.
 4. **Overlay is not a disk.** Only `/home/sync`, `/tmp/my-project`, `my-project/upload/`, `/home/user_skills`, and github survive a recycle. `/home/z/my-project` survives only via `repo.tar` (graceful shutdown) or your own `zsave`. Of these, only github (and probably `/home/user_skills`) crosses into a NEW chat.
 5. **Parallel/feature work goes OUTSIDE the project**: `git -C /home/z/my-project worktree add /tmp/my-project/worktrees/<name> -b <branch>` — watchdog-free AND recycle-safe. Push from there.
 6. **Never loop `caddy` subcommands (run/start/stop/reload/file-server) and never curl-loop ports 12600/19001/19005/19006** — irreversible session-wide 403 lockout. One probe per toolcall. **[I]**
@@ -151,9 +170,9 @@ the topic is relevant.
 
 ## ⚠️ Parallel sessions (shared /home/user_skills)
 
-**⚠️ Parallel sessions (R10-13):** `/home/user_skills/` is **per-user, shared
-across concurrent chats**. The platform runs 2-3 concurrent sessions under the
-same account — they all see the same `/home/user_skills/`. This is a boon
+(R10-13) `/home/user_skills/` is **per-user, shared across concurrent
+chats**. The platform runs 2-3 concurrent sessions under the same account —
+they all see the same `/home/user_skills/`. This is a boon
 (skills installed once are available everywhere) but can cause surprises:
 parallel sessions can silently overwrite each other's `${ZK_PREFIX}-doppler.env`,
 cause push divergence on the backup repo, or write phantom files. See
@@ -199,7 +218,7 @@ shield semantics, gitdir relocation, worktree orphan recovery, force-move refs):
 ## Saving work — zsave
 
 ```
-bash /home/z/my-project/scripts/zsave "milestone message"
+bash /home/z/my-project/scripts/zsave "<what you just finished>"
 ```
 
 Does, in order: maintain `.git/info/exclude` → `git add -A` + commit (incl. `.env`
@@ -211,8 +230,11 @@ repo.tar failed, or the credential-file write did not verify (F16) (push failure
 warning). Full 6-step internals with exclude
 rules: `kb/zsave-internals.md`.
 
-Run after every meaningful milestone, before risky operations, and at least
-every ~10 toolcalls in long sessions. It is cheap (a few seconds).
+Run after every micro-milestone — every good moment: a file finished, a step
+verified, a bug fixed — before risky operations, and at least every ~10
+toolcalls in long sessions. It is cheap (a few seconds). Do NOT wait for a
+"big enough" moment: the grand final save never happens, and everything
+since your last zsave is one recycle away from oblivion.
 
 **Concurrency:** zsave takes a per-container lock (`/tmp/.zsave.lock`). **Sub-agents
 must NOT run zsave** — the coordinating agent owns saves (two concurrent runs
@@ -441,12 +463,14 @@ DON'T
   use `git remote -v`                                     # prints PAT — use `git remote`
 ```
 
-## New project setup (rare — only when a repo has never used this kit)
+## New project setup (when the repo has never used this kit)
 
-The rare path: instantiating the kit into a repo for the first time. (The
-installer also runs during cold-start recovery — that's the common path, see
-the MUST-READ section above.) Everything is automated, but you MUST name the
-project explicitly so you never inherit another project's prefix:
+The setup flow — triggered when `.agents/` does not exist and no backup repo
+carries one (see the MUST-READ decision block for how to tell the two flows
+apart). The installer also runs during cold-start recovery — that's the
+restore flow, see the MUST-READ section above. Everything is automated, but
+you MUST name the project explicitly so you never inherit another project's
+prefix:
 
 ```bash
 ZK_PREFIX=<your-project-name> bash /home/user_skills/z-container-kit/scripts/install.sh

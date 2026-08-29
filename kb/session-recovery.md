@@ -1,10 +1,12 @@
 # Session recovery (fresh chat) — detail
 
-> SCOPE: this module is about **new sessions** (the 100% case — every time an
-> agent loads this skill in a new chat and the workspace needs recovery). The
-> inline MUST-READ section of SKILL.md carries the short version; this module
-> is the deep dive. For instantiating the kit into a **new repo/project**
-> (the rare case), see `kb/new-project.md` — different scenario, different flow.
+> SCOPE: this module covers **starting a new session on an EXISTING
+> project** — a repo that already uses the kit (`.agents/` present in the
+> workspace, or restorable from the backup repo) and whose workspace needs
+> recovery. The inline MUST-READ section of SKILL.md carries the short
+> version; this module is the deep dive. A project that has NEVER used the
+> kit (no `.agents/`, nothing to restore) is a different flow:
+> `kb/new-project.md`.
 
 Paths A/B/C, credential-file shortcut, branch-rename, env-override testing.
 Extracted from SKILL.md v2.3.3, reworked for the v3.1 `.agents/` layout.
@@ -14,27 +16,31 @@ Fresh-chat recovery. The container boots as a bare platform template —
 `bash /home/user_skills/z-container-kit/scripts/zsession` works pre-recovery
 and prints this same sequence). Two-and-a-half paths:
 
-**A. Nothing survived** (true cold start — you have a PAT and the kit repo
-URL, nothing else; `/home/user_skills` empty). Wire the remote BEFORE the
+**A. Nothing survived** (true cold start — you have a PAT and the repo URL,
+nothing else; no credential file, and the local kit package at
+`/home/user_skills/z-container-kit` is absent — CHECK with `ls` first: when
+the package survived, you skip the clone below). Wire the remote BEFORE the
 kit install so the installer can derive ZK_PREFIX from the origin URL
 (nothing else exists to derive it from):
 
 ```
-git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit   # any scratch path works
+KIT=/home/user_skills/z-container-kit   # LOCAL package first — per-user, survives new chats
+[ -f "$KIT/scripts/install.sh" ] || { git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit; KIT=/tmp/my-project/kit; }   # fallback: public repo, no PAT needed
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git   # the repo backing THIS workspace
 git -C /home/z/my-project fetch origin                                   # fetch first (DO NOT reset --hard yet)
 # F18 (audit): verify the remote is the one you expect BEFORE destructive reset.
 git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK the commits
 # if the commits match your expectation, proceed; if they look like the WRONG repo's history, STOP and ask the user
 git -C /home/z/my-project reset --hard origin/main   # restore the workspace (empty remote? skip)
-bash /tmp/my-project/kit/scripts/install.sh    # instantiate .agents/ + shims (derives ZK_PREFIX from the origin URL; installs strips any clone .git)
+bash "$KIT/scripts/install.sh"    # instantiate .agents/ + shims (derives ZK_PREFIX from the origin URL; installs strips any clone .git)
 bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
 ```
 
 The PAT is typed exactly ONCE (the remote-add line) — it is already in the
 transcript via the user's message, and every helper masks it from here on
-(rotate at github.com/settings/tokens anytime if concerned). The clone itself
-needs no PAT — the kit repo is public.
+(rotate at github.com/settings/tokens anytime if concerned). The kit comes
+from the local package when it survived; the fallback clone needs no PAT
+(the kit repo is public).
 
 **B. Something survived** (credential file or kit copy in `/home/user_skills`):
 recover the remote — every successful `zsave` writes a `${ZK_PREFIX}-remote.url`
