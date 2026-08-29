@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # zsession — Z-container situation report at session start (read-only).
-# (kit v3.1.5)
+# (kit v3.1.6)
 # Makes no persistent changes: mount checks create+remove one unique
 # .${PREFIX}-rw-$$ probe file; git commands only read (status may refresh the
 # index stat-cache, which is cosmetic).
@@ -286,13 +286,14 @@ if [ "$LIVE" = 1 ]; then
   # Round-11 F4/F9: the worklog is COMMITTED (survives cross-chat). If it is
   # missing, first try to recover it from git history before starting blank —
   # a "cleanup" commit once removed it from tracking and the content lived on
-  # only in history. The protocol/template lives in kb/sub-agents.md.
+  # only in history. The protocol itself is preset-provided; the container
+  # deltas (committed-by-zsave, recovery) live in kb/sub-agents.md.
   if [ ! -f "$PROJ/worklog.md" ]; then
     WL_HIST="$(git -C "$PROJ" log --all --oneline -- worklog.md 2>/dev/null | head -1)"
     if [ -n "$WL_HIST" ]; then
       rec "worklog.md missing but present in history ($WL_HIST) — recover: git -C $PROJ show <that-commit>:worklog.md > $PROJ/worklog.md"
     else
-      rec "create worklog: touch $PROJ/worklog.md  (append-only protocol + template: kb/sub-agents.md — COMMITTED, survives cross-chat)"
+      rec "create worklog: touch $PROJ/worklog.md  (append-only, preset worklog protocol; zsave commits it — container deltas: kb/sub-agents.md)"
     fi
   fi
 fi

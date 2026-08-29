@@ -2,7 +2,7 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "3.1.5"
+  version: "3.1.6"
   verified: "2026-08-29 (live experiments + 12 validation rounds; see evidence/EXPERIMENTS.md)"
   description: >
     Survival guide for the sandbox container. The kit is instantiated into
@@ -84,9 +84,9 @@ The worklog is committed (survives cross-chat). If it is missing, recover it
 from git history before recreating it: `git log --all --oneline -- worklog.md`,
 then `git show <last-commit-that-had-it>:worklog.md > worklog.md` — do NOT
 start a blank file if history still has the content. If there is truly no
-prior worklog (brand-new repo), create it following the protocol in
-`kb/sub-agents.md` (the append-only template with Task ID / Work Log /
-Stage Summary).
+prior worklog (brand-new repo), create it following the preset's worklog
+protocol (append-only, sections starting `---`, Task ID / Agent / Task /
+Work Log / Stage Summary).
 
 **4. If the workspace is the boot template** (single "Initial commit", no
 worklog, `scripts/` empty) — cold start. Wire the remote BEFORE the kit
@@ -362,6 +362,10 @@ protect the main session.
 - Sub-agents MUST NOT run `zsave` — the coordinating agent owns all saves
   (zsave's per-container lock would otherwise corrupt repo.tar). Pushing from a
   worktree is always fine.
+- Everything else — Task-tool usage, self-contained prompts, Task-ID
+  assignment, the shared worklog protocol — is already provided by the
+  environment preset; this kit records only the container deltas above
+  (deep dive: `kb/sub-agents.md`).
 
 ## Persistence map
 
@@ -541,7 +545,8 @@ symlinks; `exec bash` keeps a single process and forwards the exit code.
 - `kb/networking.md` — ports, Caddy, XTransformPort, egress detail
 - `kb/dev-server-database.md` — :3000 dev server, Prisma + SQLite detail
 - `kb/secrets-audits.md` — F11/F13/F18/F21/F12/F15 audit callouts
-- `kb/sub-agents.md` — Task tool usage + the worklog protocol (container-specific)
+- `kb/sub-agents.md` — container-specific sub-agent deltas: shared-container
+  isolation, zsave ownership, worklog commit/recovery (preset provides the rest)
 - `kb/terminal-lockout.md` — the irreversible caddy/port-loop 403 hazard (deep dive)
 - `kb/troubleshooting.md` — debugging trees for common symptoms
 - `kb/helpers-audits.md` — per-helper audit callouts (F6/F8/F10/M7/M3/M4)

@@ -85,5 +85,5 @@ step 1 becomes
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides for safe scratch testing.
-- Version 3.1.5 — provenance and validation history in `reference.md` §13
+- Version 3.1.6 — provenance and validation history in `reference.md` §13
   (v3.x entry appended).
