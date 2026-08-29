@@ -15,8 +15,8 @@ what makes scratch TESTS safe — same mechanism, not a separate "test mode").
 Overriding keeps runs away from the real `/home/sync` artifacts (an
 accidental real zsave would overwrite `/home/sync/repo.tar` — the
 boot-restore artifact — with whatever the project contains at that moment)
-and away from the real `/home/user_skills` (credential files; refresh.sh
-would refresh the real canonical package):
+and away from the real `/home/user_skills` (the account default
+`zk-default.env`; refresh.sh would refresh the real canonical package):
 
 ```
 S=/tmp/my-project/helper-test; mkdir -p $S/demo $S/sync $S/usk
@@ -39,19 +39,20 @@ Notes:
 - `ZK_PROJ` redirects the project dir (watchdog checks and live-project
   checks are skipped cleanly for scratch paths).
 - `ZK_SYNC` redirects snapshots/repo.tar/state writes.
-- `ZK_USK` redirects the credential-file write, the canonical-package
-  presence check in zsession, and refresh.sh's package refresh. Without it,
-  a scratch run still READS the real `/home/user_skills` (zsession reports
-  the real canonical package path). Prefix resolution itself no longer
-  reads any account-wide state (v4.1: env + project config only), so
-  scratch identity is fully controlled by `ZK_PROJ`/`ZK_PREFIX`.
-- The python helpers (`doppler_fetch.py`, `verify_access.py`) honor
-  `ZK_USK` / `ZK_PROJ` the same way (v3.1.5 — PR#2 review F4).
+- `ZK_USK` redirects the account-default reads/writes (`zk-init --set-default`
+  writes `$ZK_USK/zk-default.env`), the canonical-package presence check in
+  zsession, and refresh.sh's package refresh. Without it, a scratch run
+  still READS the real `/home/user_skills` (zsession reports the real
+  canonical package path). Prefix resolution itself never reads account
+  state (v4.1: env + project config only), so scratch identity is fully
+  controlled by `ZK_PROJ`/`ZK_PREFIX`.
 - `ZK_PREFIX` passed explicitly outranks everything (tier 1) — use it to test
   a specific prefix without creating config files.
-- Scratch-mode guards: zsave writes the credential file to `$ZK_USK` only
-  when ZK_USK is overridden OR the run is live (a scratch ZK_PROJ with the
-  REAL /home/user_skills writes nothing there); refresh.sh skips nothing —
-  it refreshes `$ZK_USK/z-container-kit`, so point ZK_USK at scratch.
-- v4 note: `zk-init` only ever writes inside `$ZK_PROJ/.agents/config` — it
-  cannot touch anything shared unless you point ZK_PROJ at the real project.
+- v5.1: zsave no longer writes ANYTHING to user_skills in steady state (the
+  credential-file step is gone); the only user_skills write it can make is
+  the zip rebuild when missing — still pointed at `$ZK_USK` by the override.
+- refresh.sh skips nothing — it refreshes `$ZK_USK/z-container-kit`, so
+  point ZK_USK at scratch.
+- `zk-init <name>` writes only `$ZK_PROJ/.agents/config`; `zk-init
+  --set-default` writes `$ZK_USK/zk-default.env` (point ZK_USK at scratch
+  when testing it); `--default` reads `$ZK_USK/zk-default.env`.

@@ -1,8 +1,10 @@
 # zsave internals
 
-Full pipeline with exclude rules. Extracted from SKILL.md v2.3.3; v4 added
-steps 5b (zip rebuild) and 7 (worktree prune); v5 adds push auto-recovery,
-the lock-wait, and the write-only-on-change credential swap.
+Full pipeline with exclude rules. v4 added the zip rebuild and worktree
+prune; v5 added push auto-recovery and the lock-wait; v5.1 DELETED the
+credential-file step (the origin URL travels inside the repo — `.git/config`
+in repo.tar/snapshots/github — so a save has nothing to write to
+/home/user_skills).
 
 ## Saving work — zsave
 
@@ -29,13 +31,10 @@ if commit/snapshot/repo.tar fail — a push failure is a warning):
    REJECTED push (non-fast-forward — a parallel session on the same repo
    pushed first) auto-recovers once: `git pull --rebase origin <branch>` +
    retry (v5). Never force-pushes; a rebase conflict degrades to a loud
-   by-hand recipe. On success it refreshes the `${ZK_PREFIX}-remote.url`
-   credential file — atomically (same-dir tmp + mv) and ONLY when its bytes
-   actually changed (static user_skills rule: a steady-state save writes
-   user_skills zero times; mode 0600; the `/home/sync/` copy is never
-   written — ossfs ignores chmod and left it world-readable at 0777,
-   friction #9/#19; refresh.sh removes stale copies). Push stderr is echoed
-   with embedded PATs masked;
+   by-hand recipe. Push stderr is echoed with embedded PATs masked. (v5.1:
+   no credential-file write happens here at all — the remote lives in
+   `.git/config` and travels with the repo; a fresh chat re-wires it from
+   the account default or the user.)
 4. tar snapshot to `/home/sync/${ZK_PREFIX}-snapshots/proj-<ts>.tar` (keep last 5).
    Excluded: `node_modules/`, `.next/`, `.turbo/` at ANY depth, `upload/`,
    `dev.log`, and OFFICIAL skills (boot re-extracts them); CUSTOM skills

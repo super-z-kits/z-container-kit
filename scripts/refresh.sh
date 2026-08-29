@@ -118,13 +118,21 @@ fi
 # ------------------------------------------------- account-level cleanups ----
 if [ "$LIVE" = 1 ]; then
   # Friction #12 (v3-era): pre-v3.1 zsave wrote PAT-bearing URLs to /home/sync
-  # where ossfs ignores chmod (files sat world-readable at 0777). Canonical
-  # copy is /home/user_skills/<prefix>-remote.url (PolarFS, 0600).
+  # where ossfs ignores chmod (files sat world-readable at 0777).
   for f in /home/sync/*-remote.url; do
     [ -f "$f" ] || continue
-    rm -f "$f" 2>/dev/null && echo "[ok] removed stale $f (0777 PAT-leak fix; canonical copy lives in /home/user_skills/)"
+    rm -f "$f" 2>/dev/null && echo "[ok] removed stale $f (0777 PAT-leak fix)"
   done
 fi
+# v5.1: per-project credential files are GONE — the origin URL travels
+# inside the repo (.git/config in repo.tar/snapshots/github) and fresh
+# chats use the account default (zk-default.env, set via zk-init
+# --set-default). Remove obsolete pre-v5.1 credential files. Follows $USK
+# (like the backup prune below) so a ZK_USK-overridden scratch run tests it.
+for f in "$USK"/*-remote.url; do
+  [ -f "$f" ] || continue
+  rm -f "$f" 2>/dev/null && echo "[ok] removed obsolete credential file $f (v5.1: remote travels with the repo; see zk-default.env)"
+done
 # H-1 (v5 static rule): the backup-dir prune lives HERE — refresh.sh is the
 # one conscious account-level maintenance op (zcleanup-backups was a 4th
 # unsanctioned user_skills writer and was deleted). Keep newest 2 .pre-*

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zsave — one-command persistence for the Z container. (kit v5.0.0)
+# zsave — one-command persistence for the Z container. (kit v5.1)
 #
 #   0. maintain .git/info/exclude (uploads/logs/build junk stay out of git)
 #      + auto-exclude untracked NESTED git repos (scratch clones would
@@ -11,17 +11,21 @@
 #      git is the conflict handler, so zsave auto-recovers ONCE via
 #      `git pull --rebase` + retry. Never force-pushes. Only a rebase
 #      conflict falls back to a loud by-hand recipe.
-#   2b. after a successful push: refresh the ${PREFIX}-remote.url credential
-#       file in /home/user_skills — ONLY when its bytes actually changed.
-#       STATIC user_skills rule: a steady-state save writes user_skills
-#       ZERO times; when the bytes do change the swap is atomic (same-dir
-#       tmp + mv), so a parallel session never reads partial content.
+#      The remote itself needs NO separate credential file: the origin URL
+#      lives in .git/config, which travels INSIDE repo.tar/snapshots/github.
+#      A fresh chat re-wires it from the account default (zk-init --default)
+#      or the user — never from a per-project sidecar file.
 #   3. snapshot to $ZK_SYNC/${PREFIX}-snapshots/ (keep last N)
 #      - excluded: node_modules/.next/.turbo (ANY depth), upload/, dev.log,
 #        OFFICIAL skills (boot re-extracts them); CUSTOM skills are kept
 #      - built on local /tmp then copied out once (fast, atomic-ish)
 #   4. refresh $ZK_SYNC/repo.tar (the boot-restore artifact) atomically
 #   5. write $ZK_SYNC/${PREFIX}-state.env atomically (parsed with sed, never sourced)
+#
+# v5.1: zsave writes /home/user_skills ZERO times in steady state — the
+# credential-file step is GONE (the remote travels with the repo); the only
+# user_skills touch is rebuilding the portable zip when the platform
+# consumed it (missing-only, atomic, best-effort).
 #
 # Concurrency: per-container flock on /tmp/.zsave.lock. A second concurrent
 # zsave WAITS (up to ZK_LOCK_WAIT, default 180s) instead of failing — saves
@@ -35,6 +39,11 @@
 # exit:   0 saved (push failure warns but exits 0); 1 if commit/snapshot/
 #         repo.tar failed; 75 only if the lock could not be acquired within
 #         ZK_LOCK_WAIT seconds (nothing was changed in that case).
+#
+# Zero-script equivalent (scripts are accelerators, never requirements —
+# good-enough emergency version, see SKILL.md "Saving work"):
+#   git add -A && git commit -m "checkpoint" && git push
+#   tar -C "$PROJ" --exclude=node_modules --exclude=.next -cf /home/sync/repo.tar .
 set -uo pipefail
 # Resolve ZK_PREFIX — location-agnostic (kit v4.1 zero-install): identity
 # is CONFIGURATION (.env pattern), never discovery. Exactly two sources:
@@ -215,79 +224,9 @@ elif git remote get-url origin >/dev/null 2>&1; then
     fi
   fi
 else
-  echo "[note] no origin remote — snapshot-only."
-  echo "       add one: git remote add origin https://<PAT>@github.com/<user>/<repo>.git"
-  echo "       (a surviving ${PREFIX}-remote.url credential file may hold it — see zsession)"
-fi
-
-# --- 2b. credential persistence (best-effort, never fatal) --------------------
-# Record the origin URL (PAT embedded) so a FRESH chat can re-add the remote
-# even if per-chat /home/sync is empty. Written ONLY after a successful push,
-# so the file always holds the URL that last worked. Lives OUTSIDE kit dirs so
-# a kit refresh never deletes it. Contains the PAT: never print it.
-#
-# v5 STATIC user_skills rule: /home/user_skills is read-only for sessions
-# except zero-collision credential placements — this is one, under the
-# zero-collision contract:
-#   - SKIPPED entirely when the bytes already match (a steady-state save
-#     writes user_skills zero times — no mtime churn, nothing to race with)
-#   - when the bytes change: atomic same-dir tmp + mv (a parallel session
-#     sees old-or-new, never a partial file), mode set BEFORE the swap
-#   - last-writer-wins is the accepted semantic: every writer just pushed to
-#     the SAME repo, so whichever bytes survive are a URL that last worked
-#
-# F16 (audit): the original `printf > file` pattern returned success even when
-# the bytes didn't persist (observed: PolarFS sync delay silently left the file
-# with a STALE URL, causing fresh-chat recovery to pull from the WRONG repo and
-# overwrite the working tree with unrelated content). The fix: re-read the file
-# after writing and WARN if the bytes don't match. Up to 3 retries with `sync`.
-if [ "$PUSHED" = "yes" ]; then
-  URL="$(git remote get-url origin 2>/dev/null || true)"
-  if [ -n "$URL" ]; then
-    write_cred() {
-      local target="$1" attempts=0 actual="" tmp=""
-      # write-only-on-change: byte-identical content means NO write at all
-      actual="$(cat "$target" 2>/dev/null || true)"
-      if [ "$actual" = "$URL" ]; then
-        echo "[ok] credential file unchanged (static user_skills): $target"
-        return 0
-      fi
-      while [ $attempts -lt 3 ]; do
-        attempts=$((attempts + 1))
-        tmp="$target.tmp.$$"
-        if printf '%s\n' "$URL" > "$tmp" 2>/dev/null; then
-          chmod 600 "$tmp" 2>/dev/null
-          sync "$tmp" 2>/dev/null   # flush FUSE cache (no-op on non-FUSE)
-          # atomic swap: same-dir rename — parallel sessions see old or new,
-          # never a partial file
-          if mv -f "$tmp" "$target" 2>/dev/null; then
-            # VERIFY: read back and confirm the bytes actually persisted
-            actual="$(cat "$target" 2>/dev/null || true)"
-            [ "$actual" = "$URL" ] && break
-          fi
-        fi
-        rm -f "$tmp" 2>/dev/null
-        sleep 0.1   # tiny pause before retry (PolarFS sync window)
-      done
-      if [ "$actual" = "$URL" ]; then
-        # F13: surface the file mode so reviewers can spot the ossfs 0777 quirk
-        local mode; mode="$(stat -c '%a' "$target" 2>/dev/null || echo '??')"
-        echo "[ok] credential file: $target (mode $mode, fresh-chat remote recovery)"
-      else
-        echo "[WARN] credential file $target write did NOT persist (got len=${#actual}, expected ${#URL})" >&2
-        echo "       manual recovery: bash -c 'printf \"%s\\n\" \"\$0\" > \"$target\"' \"\$URL\"" >&2
-        echo "       (the next zsave will retry; until then fresh-chat recovery may pull a stale URL)" >&2
-        FAIL=1
-      fi
-    }
-    # scratch-guard: a run that did NOT override ZK_USK must not pollute the
-    # REAL /home/user_skills unless it is the live project. (The historical
-    # /home/sync/ copy is not written at all — ossfs ignores chmod and left the
-    # PAT world-readable at 0777; refresh.sh removes stale pre-v3.1 copies.)
-    if { [ "$USK" != /home/user_skills ] || { [ "$PROJ" = "/home/z/my-project" ] && [ "$SYNC" = "/home/sync" ]; }; } then
-      write_cred "$USK/${PREFIX}-remote.url"
-    fi
-  fi
+  echo "[note] no origin remote — snapshot-only. github is the ONLY cross-chat layer: add one."
+  echo "       account default set? bash $SCRIPT_DIR/zk-init --default   (wires it + reveals the project)"
+  echo "       else: git remote add origin https://<PAT>@github.com/<user>/<repo>.git"
 fi
 
 # --- 3+4. snapshot + repo.tar refresh ------------------------------------------

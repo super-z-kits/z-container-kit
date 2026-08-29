@@ -6,7 +6,9 @@ This module holds the forensic evidence for agents who need to understand
 
 ## Method
 
-Double-forked observer (`scripts/wdt_watch.py`) armed inotify (ctypes) on
+Double-forked observer (the experiment's `wdt_watch.py` — removed from the
+shipped kit in v5.1; the forensic rounds are complete and this module +
+`evidence/watchdog-forensics.log` hold the results) armed inotify (ctypes) on
 `/home/z/my-project/.git` + 4 Hz `/proc` scanning; interleaved bash/Read/
 Write toolcalls; markers written into the log for windowing. Raw evidence:
 `evidence/watchdog-forensics.log`.

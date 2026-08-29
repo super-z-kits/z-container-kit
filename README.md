@@ -5,7 +5,8 @@ mechanics of the git HEAD watchdog (a `git switch main` prelude that runs
 before every toolcall), the persistence model (overlay vs PolarFS vs ossfs
 vs github; `repo.tar` restore semantics), background-process survival
 (double-fork daemons), the irreversible terminal-command lockout hazard,
-and the `zsave` / `zsession` helpers.
+and the `zsave` / `zsession` helpers (six scripts — each earns its
+existence; everything else is a documented one-liner).
 
 Every operational claim in `SKILL.md` is graded: **[V]** verified live,
 **[S]** read from the boot-script source, **[I]** inherited/unverified.
@@ -31,17 +32,22 @@ single-project account. v4 made it zero-install, multi-kit and multi-repo
 the last gap — **parallel sessions under one account, sometimes on the SAME
 repo**: `/home/user_skills` has no git (no merge, no rebase, no conflict
 handling), so it is now **read-only for sessions** (the static rule). The
-only sanctioned writes are the three zero-collision ones (atomic kit
-refresh; idempotent zip rebuild; credential files keyed by a unique prefix,
-written atomically and only on change). Same-repo divergence is handled by
-git itself: zsave auto-recovers a rejected push via `pull --rebase` + retry,
-never force-pushes, and concurrent saves serialize on a lock they WAIT for
-instead of failing. Scripts are optional accelerators — every recurring flow
-is documented so plain git + the docs always suffice.
+only sanctioned writes are zero-collision ones (atomic kit refresh;
+idempotent zip rebuild; secrets-vault-kit's prefix-keyed doppler env files;
+the account default `zk-default.env`, set only by the explicit
+`zk-init --set-default`). Same-repo divergence is handled by git itself:
+zsave auto-recovers a rejected push via `pull --rebase` + retry, never
+force-pushes, and concurrent saves serialize on a lock they WAIT for
+instead of failing. v5.1 deleted the `${ZK_PREFIX}-remote.url` credential
+files entirely — the origin URL travels INSIDE the repo (`.git/config` in
+repo.tar/snapshots/github), so steady-state saves write `/home/user_skills`
+zero times. Scripts are optional accelerators — every recurring flow is
+documented so plain git + the docs always suffice.
 
 - Project setup: `bash /home/user_skills/z-container-kit/scripts/zk-init <name>`
 - Account upgrade: `bash <updated-clone>/scripts/refresh.sh`
-- v3 repo cleanup: `bash /home/user_skills/z-container-kit/scripts/zk-init --migrate-v3`
+- Single-project account default (opt-in):
+  `bash /home/user_skills/z-container-kit/scripts/zk-init --set-default`
 
 ## Cold-start bootstrap (fresh session — a PAT and this repo URL, nothing else)
 
@@ -50,7 +56,10 @@ is documented so plain git + the docs always suffice.
 KIT=/home/user_skills/z-container-kit
 [ -f "$KIT/scripts/zsave" ] || { git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit; KIT=/tmp/my-project/kit; }
 
-# 1) wire the GitHub repo that backs THIS workspace (user-supplied PAT)
+# 1) wire the GitHub repo that backs THIS workspace — account default first:
+#    - default set (single-project account)?  bash "$KIT/scripts/zk-init --default"
+#      (writes config + wires origin + fetches + REVEALS which project came back)
+#    - no default? user-supplied PAT (or Doppler-vault GH_PAT, see secrets-vault-kit):
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git
 
 # 2) verify + restore the workspace (skip the reset if the remote is brand-new/empty)
@@ -74,11 +83,13 @@ Then run `bash /home/user_skills/z-container-kit/scripts/zsession` (situation
 report) and read `SKILL.md` — the "New session — MUST READ" section comes
 first.
 
-Shortcut: if a prior session left `/home/user_skills/<prefix>-remote.url`
-(the zsave-maintained credential file — ONE PER PROJECT on multi-repo
-accounts; list them with `ls /home/user_skills/*-remote.url` and pick THIS
-session's project), step 1 becomes
-`git -C /home/z/my-project remote add origin "$(cat /home/user_skills/<your-prefix>-remote.url)"`.
+Shortcut: a single-project account can skip the PAT handover entirely —
+after the first successful save, run `bash "$KIT/scripts/zk-init
+--set-default"` once (snapshots prefix + origin into
+`/home/user_skills/zk-default.env`, mode 0600). Every later fresh chat is
+one command: `bash "$KIT/scripts/zk-init --default"` — it wires the remote
+and LOUDLY reveals which project came back (the tripwire that catches a
+default set on what is really a multi-repo account).
 
 ## Contents
 
@@ -87,12 +98,12 @@ session's project), step 1 becomes
 | `SKILL.md` | operational survival guide — start here (MUST-READ session section first) |
 | `reference.md` | deep detail: boot sequence, storage internals, forensics, helper internals |
 | `scripts/zsave` | one-command persistence: commit + push (auto-rebase on rejection) + snapshot + `repo.tar` refresh |
-| `scripts/zsession` | read-only session situation report (recycle detection, kit & config status) |
-| `scripts/zk-init` | project setup: writes `.agents/config` (`--migrate-v3` strips v3 leftovers) |
-| `scripts/refresh.sh` | account-level upgrade: atomic package refresh + zip rebuild |
+| `scripts/zsession` | read-only session situation report (recycle detection, kit & config status, account default) |
+| `scripts/zk-init` | project identity (`--force`, `--status`) + account-default bridge (`--default`, `--set-default`) |
+| `scripts/refresh.sh` | account-level upgrade: atomic package refresh + zip rebuild + housekeeping |
+| `scripts/resolve-prefix.sh` | the identity contract (ZK_PREFIX env > .agents/config > loud failure) |
 | `scripts/daemonize.py` | double-fork daemonizer — survives the per-toolcall process cull |
-| `scripts/wdt_watch.py` | forensic HEAD-watchdog observer (how the evidence was gathered) |
-| `kb/` | deep-dive modules (session recovery, new-project setup, watchdog, …) |
+| `kb/` | deep-dive modules (session start & recovery, watchdog, …) |
 | `evidence/` | experiment log + raw forensics backing every [V] claim |
 
 ## Notes
@@ -101,5 +112,7 @@ session's project), step 1 becomes
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides for safe scratch testing.
-- Version 5.0.0 — provenance and validation history in `reference.md` §13
-  (v5.0 entry appended).
+- Version 5.1.0 — provenance and validation history in `reference.md` §13
+  (v5.1 entry appended). v5.1: credential files deleted (the remote travels
+  with the repo), script existence audit (12 → 6; zdoppler-smoke moved to
+  secrets-vault-kit), account-default bootstrap, one unified session flow.

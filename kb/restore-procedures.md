@@ -34,14 +34,17 @@ substitute your scratch project + `ZK_SYNC` scratch dir and run the same steps:
    so repo.tar reflects the restored state.
 
 **C. Fresh chat / empty /home/sync:** `git clone` into my-project fails (the
-boot template is not empty). Recover the URL from a surviving `${ZK_PREFIX}-remote.url`
-credential file (`git remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`),
-else ask the user for the PAT and re-add by hand (verify with `git remote` —
-names only, never `git remote -v`); then `git fetch && git reset --hard
-origin/main` — in v4 that is the whole recovery (`.agents/config` comes back
-with the reset; no install step exists), then
-`bash /home/user_skills/z-container-kit/scripts/zsave "fresh-chat recovery checkpoint"`
-to re-anchor repo.tar, snapshots, and the credential files.
+boot template is not empty). Wire the remote: account default set?
+`bash /home/user_skills/z-container-kit/scripts/zk-init --default` (writes
+config + wires origin + fetches + reveals the project — guards refuse if
+the repo disagrees with the default). No default: Doppler vault GH_PAT
+(secrets-vault-kit) or ask the user for the PAT and
+`git remote add origin https://<PAT>@github.com/<u>/<r>.git` (verify with
+`git remote` — names only, never `git remote -v`); then the sanity-check log
+line + `git fetch && git reset --hard origin/main` — that is the whole
+recovery (`.agents/config` comes back with the reset; no install step
+exists), then `bash /home/user_skills/z-container-kit/scripts/zsave
+"fresh-chat recovery checkpoint"` to re-anchor repo.tar and snapshots.
 
 **D. Stuck repo states:**
 - mid-rebase/merge after a failed pull: `git rebase --abort` /

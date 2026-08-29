@@ -210,37 +210,52 @@ unknown; ossfs df shows 16E (unlimited-looking) — actual bucket quota unknown.
   credential file listed with masked URLs — multi-repo aware), fetch+reset
   (config comes back with the repo), identity verify (zk-init hint), first
   zsave. v4.1 kit & config section: canonical kit version, portable zip,
-  project config, old-kit leftovers in THIS project — nothing else (kits are
-  self-contained; no account-wide prefix scan, no other-kit inventory).
+  project config — nothing else (kits are self-contained; no account-wide
+  prefix scan, no other-kit inventory). v5.1: reports the account default
+  (zk-default.env, masked) and the cold-start sequence leads with
+  `zk-init --default` when a default is set; v3-leftover scanning removed
+  (helpers never read them; dead files are documented, not inventoried).
 - `daemonize.py`: double-fork + setsid + stdio to --log (or /dev/null) +
   `--cwd` + execvp. Reparented to PID 1; survives all toolcalls; dies on
   recycle.
-- `zsave` (v5): one-command persistence — info/exclude maintenance, `git add
+- `zsave` (v5.1): one-command persistence — info/exclude maintenance, `git add
   -A` + commit (incl. .env), push with ONE auto-recovery attempt on rejection
   (non-fast-forward ⇒ `git pull --rebase` + retry; rebase conflict ⇒ loud
-  by-hand recipe; never force-push), credential file refreshed atomically
-  (same-dir tmp + mv) and ONLY when its bytes changed (static user_skills
-  rule — a steady-state save writes user_skills zero times), tar snapshot
-  (keep ZK_KEEP), repo.tar refresh, state.env, portable zip rebuild when
-  missing (LIVE only), worktree prune. Per-container flock with WAIT
-  (ZK_LOCK_WAIT, default 180s — concurrent saves serialize; exit 75 only
-  after a full timeout, nothing changed).
-- `zk-init` (v4, replaces install.sh's project role): writes the ONE
-  per-project artifact — `.agents/config` (ZK_PREFIX=<name>); --force
-  overwrites (the wrong-prefix fix); --migrate-v3 strips a v3-era kit tree
-  (.agents/SKILL.md, scripts/ shims, skills/z-container symlink) keeping the
-  config; --status inspects. Sets the safe.directory git-config entry.
+  by-hand recipe; never force-push), tar snapshot (keep ZK_KEEP), repo.tar
+  refresh, state.env, portable zip rebuild when missing (LIVE only),
+  worktree prune. Per-container flock with WAIT (ZK_LOCK_WAIT, default 180s —
+  concurrent saves serialize; exit 75 only after a full timeout, nothing
+  changed). v5.1 DELETED the credential-file step: the origin URL travels
+  inside the repo (.git/config in repo.tar/snapshots/github), so a save
+  writes /home/user_skills ZERO times in steady state (only the
+  missing-zip rebuild can touch it).
+- `zk-init` (v5.1): writes the ONE per-project artifact —
+  `.agents/config` (ZK_PREFIX=<name>); --force overwrites (the wrong-prefix
+  fix); --status inspects (config, account default, origin, kit). NEW
+  account-default bridge: --default initializes from
+  $USK/zk-default.env (guards: repo's own config/origin always win — refuse
+  loudly on mismatch; writes config, wires origin, fetches, REVEALS masked
+  origin/main + banner; never auto-resets), --set-default snapshots the
+  current project's prefix+origin into the default (conscious act, atomic
+  tmp+mv, 0600, single-project warning). --migrate-v3 REMOVED (the v3 era
+  is over; leftovers are harmless dead files). Sets the safe.directory
+  git-config entry.
 - `refresh.sh` (v4, replaces install.sh's account role; v5: rename-aside
   swap): per-run staging (`$$`) + two atomic directory renames swap the
   canonical /home/user_skills/z-container-kit package from a kit clone
   (strips .git/__pycache__/config; 0644 normalization; version reporting;
   concurrent refreshes never swap a half-copied tree), rebuilds the portable
-  zip, removes stale pre-v3.1 /home/sync/*-remote.url copies, and prunes old
-  `.pre-*` backup dirs (keep newest 2 per skill — the zcleanup-backups prune,
-  folded in v5; that script is deleted). Never touches any project. THE
-  sanctioned user_skills writer (the static rule's write #1).
-- `install.sh`: REMOVED (v4 stub deleted in v5 — zk-init + refresh.sh fully
-  replaced it).
+  zip, removes stale pre-v3.1 /home/sync/*-remote.url copies AND obsolete
+  pre-v5.1 $USK/*-remote.url credential files (one-shot migration), and
+  prunes old `.pre-*` backup dirs (keep newest 2 per skill — the
+  zcleanup-backups prune, folded in v5; that script is deleted). Never
+  touches any project. THE sanctioned user_skills writer (the static
+  rule's write #1).
+- Removed in v5.1 (existence audit): `zremote` (documented mask one-liner),
+  `zdoppler-smoke` (moved to secrets-vault-kit — Doppler is its domain),
+  `doppler_fetch.py` + `verify_access.py` (svk curl recipes cover both),
+  `wdt_watch.py` (forensics complete; evidence retained), `zkit-selftest`
+  (dev suites live with kit development). `install.sh` was removed in v5.
 
 ## 11. Sub-agent playbook (container deltas)
 
@@ -467,6 +482,45 @@ zsession kit-checkout line instead of misleading "MISSING canonical kit",
 wrong-repo.tar boot-restore warning (prefix-scoped, no account scan),
 recovery-prefix wording, zsave target line + flock retry hint, overrides
 reframed from "testing-only" to the general multi-project mechanism).
+
+**v5.1.0 (2026-08-30, the simplification / minimal-scripts round):** owner
+push: "one more round to check for simplification and minimal (if not zero
+script) setup… their existence should truly be justified and then validated
+through sub-agent runs". Three decisions. (1) **The credential-file mechanism
+is GONE** — "if the repo is being preserved (repo.tar, etc.) then git remote
+should be part of that (z endpoint url completely unnecessary)": the origin
+URL+PAT live in `.git/config`, which travels inside repo.tar, snapshots, and
+github; a sidecar `${ZK_PREFIX}-remote.url` duplicated it (and carried the
+F16 stale-write failure class). zsave lost its step 2b (~70 lines + the
+F16 verify machinery + the scratch-guard); steady-state saves now write
+/home/user_skills literally zero times; refresh.sh one-shot-removes obsolete
+credential files. (2) **Script existence audit — 12 → 6**: kept zsave
+(auto-rebase, atomic tar swaps, masking, nested-repo guard, lock — proven in
+UA rounds), zsession (one read-only situation command), zk-init (identity
+guards + the new default bridge), refresh.sh (atomic account upgrade),
+resolve-prefix.sh (the identity contract), daemonize.py (double-fork [V]);
+DELETED zremote (a documented mask one-liner), zkit-selftest (dev-only),
+doppler_fetch.py + verify_access.py (svk's documented curl recipes cover
+both), wdt_watch.py (forensics complete — evidence retained); MOVED
+zdoppler-smoke → secrets-vault-kit v2.10 (Doppler is that kit's domain; svk's
+canonical flow was its only consumer). (3) **The account default** (owner
+idea, opt-in): `/home/user_skills/zk-default.env` (ZK_DEFAULT_PREFIX +
+ZK_DEFAULT_REMOTE, 0600) set once by `zk-init --set-default` (conscious act,
+sanctioned write #4) — a single-project account's fresh chats then run
+`zk-init --default`: config + origin + fetch + a LOUD reveal of which
+project came back (the multi-repo tripwire — guards refuse if the repo's own
+config/origin disagree; resolve-prefix NEVER consults the default, the
+identity contract is untouched). Also: the new-session/new-repo flow split
+collapsed into ONE checklist (setup = recovery minus the restore step);
+"add on top of your todo as STICKY and never mark done: zsave after every
+micro milestone" is now step 0 of the MUST-READ; SKILL.md zsave section
+carries the honest zero-script one-liner equivalents; kb/new-project.md
+merged into kb/session-recovery.md. Validation: v510 scratch suite
+(identity regressions incl. default-never-resolves-identity, zsave
+zero-user_skills-writes, --default/--set-default guard matrix, script count
+= 6) + fresh-context sub-agent rounds (single-project default bootstrap,
+multi-repo stress, zero-script emergency path) + adversarial doc/code
+review.
 
 **v5.0.0 (2026-08-30, the static user-skills / multi-track round):** owner
 feedback: "everything in user-skill is static… when there's parallel
