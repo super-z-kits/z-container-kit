@@ -19,6 +19,14 @@ ZK_PROJ=$S/demo ZK_SYNC=$S/sync ZK_USK=$S/usk bash /home/z/my-project/scripts/zs
 ZK_PROJ=$S/demo ZK_SYNC=$S/sync ZK_USK=$S/usk ZK_PREFIX=demo bash <kit>/scripts/install.sh
 ```
 
+**The fresh-subshell trap (round-4 live incident):** each bash toolcall is a
+FRESH subshell — overrides exported (or set bare) in one call are GONE in the
+next. Prefix EVERY test command with the full override set, all on ONE line
+in the SAME toolcall as the command, exactly as the examples above do. An
+install.sh run with missing overrides silently targets the REAL
+`/home/z/my-project` (it upgrades `.agents/` in place) — that is how a
+scratch test becomes a live one by accident.
+
 Notes:
 - `ZK_PROJ` redirects the project dir (watchdog checks and live-project
   checks are skipped cleanly for scratch paths).

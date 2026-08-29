@@ -112,7 +112,7 @@ PAT is typed exactly once (the remote-add line). The kit comes from the local
 package when it survived; the fallback clone needs no PAT (public repo). Two
 alternatives for the remote-add step:
 
-- **B1 — credential file survived** (most common in Path B): find it with
+- **B1 — credential file survived** (Path B's credential-file shortcut): find it with
   `ls /home/user_skills/*-remote.url` (the prefix is the filename part before
   `-remote.url` — there is one per project; `${ZK_PREFIX}` is not defined in
   your shell yet, so resolve the path first):

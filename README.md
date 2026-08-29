@@ -60,8 +60,10 @@ read `SKILL.md` — the "New session — MUST READ" section comes first.
 
 Shortcut: if a prior session left `/home/user_skills/${ZK_PREFIX}-remote.url` (the
 zsave-maintained credential file — the prefix is the filename part before
-`-remote.url`), step 1 becomes
-`git -C /home/z/my-project remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`.
+`-remote.url`; note `${ZK_PREFIX}` is NOT defined in your shell yet, so
+resolve the actual path with `ls /home/user_skills/*-remote.url` first),
+step 1 becomes
+`git -C /home/z/my-project remote add origin "$(cat /home/user_skills/<prefix>-remote.url)"`.
 
 ## Contents
 

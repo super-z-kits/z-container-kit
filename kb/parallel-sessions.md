@@ -14,7 +14,8 @@ all your concurrent sessions share the same directory. This is a huge boon
    means the last writer wins — no atomicity, no session attribution.
 2. **Push divergence**: session A and session B both `zsave` to the same
    backup repo. The first push succeeds; the second is rejected (divergence).
-   Per law 2 (never force-push), resolve with `git pull --rebase origin main`.
+   Per rule 3 (never force-push — the "Rules you never break" list; NOT a law),
+   resolve with `git pull --rebase origin main` and re-push.
 3. **Phantom file writes**: a parallel session's write to `/home/user_skills/`
    appears in *your* container's filesystem — e.g. a timestamp on
    `${ZK_PREFIX}-doppler.env` that you didn't write.
