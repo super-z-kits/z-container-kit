@@ -18,7 +18,27 @@ import urllib.request
 SECRETS = "/tmp/my-project/doppler-secrets.json"
 # No hardcoded repo — use env var or CLI arg. Fail loudly if neither is provided.
 REPO = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VERIFY_REPO", "")
-if not os.environ.get("ZK_PREFIX"): print("ZK_PREFIX not set — see SKILL.md"); sys.exit(1)
+# Auto-discover ZK_PREFIX from /home/user_skills/*-config.env (like resolve-prefix.sh)
+if not os.environ.get("ZK_PREFIX"):
+    import glob
+    configs = glob.glob("/home/user_skills/*-config.env")
+    if len(configs) == 0:
+        print("ZK_PREFIX not configured — no /home/user_skills/*-config.env found")
+        print("See SKILL.md First-time setup")
+        sys.exit(1)
+    elif len(configs) > 1:
+        print(f"Multiple project configs found: {configs}")
+        print("Set ZK_PREFIX in the environment to disambiguate")
+        sys.exit(1)
+    else:
+        with open(configs[0]) as f:
+            for line in f:
+                if line.startswith("ZK_PREFIX="):
+                    os.environ["ZK_PREFIX"] = line.strip().split("=", 1)[1]
+                    break
+        if not os.environ.get("ZK_PREFIX"):
+            print(f"ZK_PREFIX not set in {configs[0]}")
+            sys.exit(1)
 
 
 def req(url, headers, timeout=30):

@@ -41,9 +41,9 @@ clone-borne `.git` from kit copies, so they stay plain, trackable directories.
 Then run `bash /home/z/my-project/scripts/zsession` (situation report) and
 read `SKILL.md` — the ten laws come first.
 
-Shortcut: if a prior session left `/home/user_skills/zk-remote.url` (the
+Shortcut: if a prior session left `/home/user_skills/${ZK_PREFIX}-remote.url` (the
 zsave-maintained credential file), step 2 becomes
-`git -C /home/z/my-project remote add origin "$(cat /home/user_skills/zk-remote.url)"`
+`git -C /home/z/my-project remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`
 — and if the kit copy in `/home/user_skills/z-container-kit` survived, you
 can skip the clone entirely and install from there.
 

@@ -192,15 +192,15 @@ unknown; ossfs df shows 16E (unlimited-looking) — actual bucket quota unknown.
   commit, message unused) → push `HEAD:<branch>` (warning on failure) →
   tar built on local /tmp (excl. node_modules/.next/.turbo at ANY depth,
   upload/, dev.log, official skills; custom skills appended back) → copied
-  to zk-snapshots + repo.tar atomically (PID-unique tmp + mv; tar exit 1
-  "file changed" tolerated for live dev servers) → zk-state.env written
+  to ${ZK_PREFIX}-snapshots + repo.tar atomically (PID-unique tmp + mv; tar exit 1
+  "file changed" tolerated for live dev servers) → ${ZK_PREFIX}-state.env written
   atomically with sanitized values (zsession parses with sed, never
   sources it). Detects `.git`-as-pointer and snapshots the real gitdir as
   `gitdir-<ts>.tar`. Exit nonzero if commit/snapshot/repo.tar fail (push
   failure stays a warning). GNU coreutils assumed (head -n -N, stat -c,
   flock).
 - `zsession`: read-only report (container, recycle detection via
-  zk-state.env + boot-epoch cross-check, git, watchdog hygiene with
+  ${ZK_PREFIX}-state.env + boot-epoch cross-check, git, watchdog hygiene with
   detached-HEAD / missing-main handling, services, kit presence, recommended
   actions). No persistent changes (mount checks create+remove a unique
   probe file); state file parsed with sed, never sourced. ZK_PROJ override
@@ -266,7 +266,7 @@ verification round confirmed the fixes. v2.2.0 then activated the github
 remote path (PAT embedded in the origin URL; the source workspace repo —
 name withheld, kit stays project-agnostic), added PAT masking to all script output
 (zsession remote display, zsave push stderr), and zsave-maintained
-`zk-remote.url` credential files (`/home/sync/`, `/home/user_skills/`)
+`${ZK_PREFIX}-remote.url` credential files (`/home/sync/`, `/home/user_skills/`)
 for fresh-chat remote recovery. Round 4 (T-r4-a E2E push/masking 8/8 PASS;
 T-r4-b fresh-chat recovery simulation, all steps PASS; T-r4-c adversarial
 containment audit — verdict CONTAINED, full git object DB scanned including
@@ -292,7 +292,7 @@ name as historical record), and the platform was observed INGESTING
 `/home/user_skills/z-container.zip` on sub-agent session spawn (zip
 removed at spawn; install.sh re-creates it — treat the zip as a delivery
 vehicle, the kit dir as the archive). T-r5-a also confirmed the
-cross-chat bet live: `/home/user_skills/zk-remote.url` survived a real
+cross-chat bet live: `/home/user_skills/${ZK_PREFIX}-remote.url` survived a real
 container recycle. Version
 history: 2.0.0 — first evidence-graded release; 2.1.0 — round-1 fixes;
 2.1.1 — round-2 fixes; 2.2.0 — github push path + PAT masking + credential
@@ -326,7 +326,7 @@ it on cold-start detection, and the kit has a canonical public home
 PAT-free; (F2) zsession recommended zsave before the script existed and
 omitted the fetch/reset/install steps — recommendations are now guarded and
 the cold-start block prints the full sequence; (F3) a repo rename left the
-zk-remote.url credential file stale (worked via GitHub redirects, silent
+${ZK_PREFIX}-remote.url credential file stale (worked via GitHub redirects, silent
 drift) — rename handling documented in the zsave-push troubleshooting tree;
 (F4) zsave committed nested git repos (scratch clones) as broken gitlinks —
 now auto-excluded when untracked, flagged with a fix command when tracked;

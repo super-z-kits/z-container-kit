@@ -151,7 +151,7 @@ session, bare bootstrap repo (single "Initial commit", no remote).
 - Leak surfaces found and closed in v2.2.0: zsession printed `git remote -v`
   (PAT-bearing URL) in every session report; zsave echoed raw push stderr.
   Both now sed-mask `ghp_`/`github_pat_`-style tokens before printing [V].
-- Credential persistence: zsave writes `zk-remote.url` (the origin URL) to
+- Credential persistence: zsave writes `${ZK_PREFIX}-remote.url` (the origin URL) to
   `/home/sync/` and `/home/user_skills/` after every successful push, so a
   fresh chat can re-add origin without the user re-pasting the PAT [V].
   Deliberately placed OUTSIDE kit dirs (install.sh's dir swap would delete it).
@@ -163,14 +163,14 @@ session, bare bootstrap repo (single "Initial commit", no remote).
   persistent via repo.tar: `git config core.fileMode false` [V].
 - Full-token scan (token extracted from .git/config into a shell var, never
   printed): all 5 kit copies, /home/user_skills/z-container.zip, workspace
-  tree (excl. .git), home dotfiles — CLEAN [V]. zk-remote.url files (x2)
+  tree (excl. .git), home dotfiles — CLEAN [V]. ${ZK_PREFIX}-remote.url files (x2)
   hold the token BY DESIGN [V].
 - `git cat-file --batch-all-objects` blob scan (includes unreachable
   objects): token never committed → not on GitHub [V]. Credential files
   never tracked in history [V].
 - repo.tar carries `.git/config` with the PAT-embedded origin URL (member
   name `.git/config`, no `./` prefix — platform naming) → boot-restore
-  re-wires the remote automatically; zk-snapshots likewise [V].
+  re-wires the remote automatically; ${ZK_PREFIX}-snapshots likewise [V].
   zk-remote entries inside any tar: 0 — credentials stay outside the
   project tree [V].
 - Kit repo-agnosticism: zero hardcoded username/repo/PAT references in
@@ -192,7 +192,7 @@ session, bare bootstrap repo (single "Initial commit", no remote).
   platform at sub-agent session spawn — skill-ingestion behavior: the zip
   is a delivery vehicle the platform consumes; install.sh re-creates it,
   and the kit dir is the durable archive [V].
-- T-r5-a bonus confirmations: /home/user_skills/zk-remote.url SURVIVED a
+- T-r5-a bonus confirmations: /home/user_skills/${ZK_PREFIX}-remote.url SURVIVED a
   real container recycle (07:14 boot) — the per-user cross-chat bet is
   now observed live, not just inferred [V]; repo.tar is gzip-compressed
   (snapshots are plain tar) — raw-byte PAT scans of repo.tar see nothing,
