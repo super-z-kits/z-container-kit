@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # zsession — Z-container situation report at session start (read-only).
-# (kit v4.1.0) Reports THIS kit and THIS project only — kits are
+# (kit v5.0.0) Reports THIS kit and THIS project only — kits are
 # self-contained by design; no cross-kit inventory, no artifact scans.
+# /home/user_skills is STATIC during sessions (read-only except the three
+# sanctioned writes — see SKILL.md); this script never writes anything.
 # Makes no persistent changes: mount checks create+remove one unique
 # .${PREFIX}-rw-$$ probe file; git commands only read (status may refresh the
 # index stat-cache, which is cosmetic).

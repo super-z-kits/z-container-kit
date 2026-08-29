@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# zsave — one-command persistence for the Z container. (kit v4.1.0)
+# zsave — one-command persistence for the Z container. (kit v5.0.0)
 #
 #   0. maintain .git/info/exclude (uploads/logs/build junk stay out of git)
 #      + auto-exclude untracked NESTED git repos (scratch clones would
 #      otherwise land as broken gitlink entries — warning printed either way)
 #   1. commit everything (git add -A, including .env — git IS the disk here)
 #   2. push to origin (if configured; failure is a warning, not fatal;
-#      embedded PATs are masked before any stderr is echoed)
+#      embedded PATs are masked before any stderr is echoed). A REJECTED
+#      push means a parallel session pushed first (multi-track same-repo) —
+#      git is the conflict handler, so zsave auto-recovers ONCE via
+#      `git pull --rebase` + retry. Never force-pushes. Only a rebase
+#      conflict falls back to a loud by-hand recipe.
 #   2b. after a successful push: refresh the ${PREFIX}-remote.url credential
-#       file in /home/user_skills (mode 0600, PolarFS) so a FRESH chat can
-#       re-add origin even when per-chat /home/sync starts empty. The
-#       historical /home/sync/ copy is NOT written (ossfs ignores chmod — the
-#       copy sat world-readable at mode 0777; friction #9/#19).
+#       file in /home/user_skills — ONLY when its bytes actually changed.
+#       STATIC user_skills rule: a steady-state save writes user_skills
+#       ZERO times; when the bytes do change the swap is atomic (same-dir
+#       tmp + mv), so a parallel session never reads partial content.
 #   3. snapshot to $ZK_SYNC/${PREFIX}-snapshots/ (keep last N)
 #      - excluded: node_modules/.next/.turbo (ANY depth), upload/, dev.log,
 #        OFFICIAL skills (boot re-extracts them); CUSTOM skills are kept
@@ -19,14 +23,18 @@
 #   4. refresh $ZK_SYNC/repo.tar (the boot-restore artifact) atomically
 #   5. write $ZK_SYNC/${PREFIX}-state.env atomically (parsed with sed, never sourced)
 #
-# Concurrency: per-container flock on /tmp/.zsave.lock. Only ONE zsave runs at
-# a time — sub-agents must NOT run zsave; the coordinating agent owns saves.
+# Concurrency: per-container flock on /tmp/.zsave.lock. A second concurrent
+# zsave WAITS (up to ZK_LOCK_WAIT, default 180s) instead of failing — saves
+# serialize transparently, no retry choreography for the agent. Sub-agents
+# still leave saves to the coordinating agent (one writer, no interleaving
+# with its other git work).
 #
 # usage:  zsave ["commit message"]
 # env:    ZK_PROJ (default /home/z/my-project), ZK_SYNC (default /home/sync),
-#         ZK_KEEP (default 5, min 1)
+#         ZK_KEEP (default 5, min 1), ZK_LOCK_WAIT (default 180 seconds)
 # exit:   0 saved (push failure warns but exits 0); 1 if commit/snapshot/
-#         repo.tar failed; 75 if another zsave holds the lock.
+#         repo.tar failed; 75 only if the lock could not be acquired within
+#         ZK_LOCK_WAIT seconds (nothing was changed in that case).
 set -uo pipefail
 # Resolve ZK_PREFIX — location-agnostic (kit v4.1 zero-install): identity
 # is CONFIGURATION (.env pattern), never discovery. Exactly two sources:
@@ -63,11 +71,15 @@ if [ ! -e .git ]; then
 fi
 
 # --- per-container concurrency lock (local fs: reliable; ossfs flock is not) --
+# v5: WAIT, don't fail. Concurrent saves serialize transparently — the agent
+# never stops its real job to choreograph retries. exit 75 fires only after a
+# full ZK_LOCK_WAIT timeout (and nothing has been changed at that point).
 if command -v flock >/dev/null 2>&1; then
   exec 9>/tmp/.zsave.lock
-  if ! flock -n 9; then
-    echo "zsave: another zsave is running in this container — aborting." >&2
-    echo "       (one zsave at a time; sibling agents share this lock — wait a few seconds and re-run)" >&2
+  LOCK_WAIT="${ZK_LOCK_WAIT:-180}"
+  if ! flock -w "$LOCK_WAIT" 9; then
+    echo "zsave: another zsave has held the lock for ${LOCK_WAIT}s — aborting (nothing was changed)." >&2
+    echo "       re-run zsave once the other save finishes; its output said exactly what it did" >&2
     exit 75
   fi
 else
@@ -172,9 +184,32 @@ elif git remote get-url origin >/dev/null 2>&1; then
   else
     # mask embedded credentials before git's stderr reaches any transcript
     out="$(printf '%s\n' "$out" | mask)"
-    echo "[warn] push failed: $out" >&2
-    echo "       hints: PAT expired/revoked (403)? rotate at github.com/settings/tokens"
-    echo "       diverged? -> git pull --rebase origin $(printf '%s' "$BR" | mask) && zsave"
+    # multi-track same-repo: a REJECTED push means a parallel session pushed
+    # first. git IS the conflict handler (merge/rebase) — auto-recover ONCE.
+    # Never force-push (rule 3). Only a rebase conflict needs the agent.
+    AUTO=0
+    if [ -z "$(git status --porcelain 2>/dev/null)" ] \
+       && printf '%s\n' "$out" | grep -qiE 'non-fast-forward|\[rejected\]|fetch first|stale info'; then
+      echo "[note] push rejected — a parallel session pushed first; auto-rebasing onto origin/$(printf '%s' "$BR" | mask)"
+      if rb="$(git pull --rebase origin "$BR" 2>&1)"; then
+        if out2="$(git push origin "HEAD:$BR" 2>&1)"; then
+          PUSHED="yes"; AUTO=1
+          echo "[ok] pushed origin/$(printf '%s' "$BR" | mask) (auto-rebase merged the parallel session's commits — nothing lost)"
+        else
+          echo "[warn] rebase succeeded but the re-push failed: $(printf '%s\n' "$out2" | mask)" >&2
+        fi
+      else
+        echo "[warn] auto-rebase hit a conflict (both sessions changed the same lines):" >&2
+        printf '%s\n' "$rb" | mask | sed 's/^/       /' >&2
+        echo "       fix by hand: resolve the conflicts, git add -A && git rebase --continue, then zsave again" >&2
+        echo "       (or git rebase --abort to keep your local commits un-pushed and think first)" >&2
+      fi
+    fi
+    if [ "$AUTO" = 0 ]; then
+      echo "[warn] push failed: $out" >&2
+      echo "       hints: PAT expired/revoked (403)? rotate at github.com/settings/tokens" >&2
+      echo "       diverged? -> git pull --rebase origin $(printf '%s' "$BR" | mask) && zsave" >&2
+    fi
   fi
 else
   echo "[note] no origin remote — snapshot-only."
@@ -186,7 +221,17 @@ fi
 # Record the origin URL (PAT embedded) so a FRESH chat can re-add the remote
 # even if per-chat /home/sync is empty. Written ONLY after a successful push,
 # so the file always holds the URL that last worked. Lives OUTSIDE kit dirs so
-# install.sh's dir swap never deletes it. Contains the PAT: never print it.
+# a kit refresh never deletes it. Contains the PAT: never print it.
+#
+# v5 STATIC user_skills rule: /home/user_skills is read-only for sessions
+# except zero-collision credential placements — this is one, under the
+# zero-collision contract:
+#   - SKIPPED entirely when the bytes already match (a steady-state save
+#     writes user_skills zero times — no mtime churn, nothing to race with)
+#   - when the bytes change: atomic same-dir tmp + mv (a parallel session
+#     sees old-or-new, never a partial file), mode set BEFORE the swap
+#   - last-writer-wins is the accepted semantic: every writer just pushed to
+#     the SAME repo, so whichever bytes survive are a URL that last worked
 #
 # F16 (audit): the original `printf > file` pattern returned success even when
 # the bytes didn't persist (observed: PolarFS sync delay silently left the file
@@ -197,15 +242,28 @@ if [ "$PUSHED" = "yes" ]; then
   URL="$(git remote get-url origin 2>/dev/null || true)"
   if [ -n "$URL" ]; then
     write_cred() {
-      local target="$1" attempts=0 actual=""
+      local target="$1" attempts=0 actual="" tmp=""
+      # write-only-on-change: byte-identical content means NO write at all
+      actual="$(cat "$target" 2>/dev/null || true)"
+      if [ "$actual" = "$URL" ]; then
+        echo "[ok] credential file unchanged (static user_skills): $target"
+        return 0
+      fi
       while [ $attempts -lt 3 ]; do
         attempts=$((attempts + 1))
-        printf '%s\n' "$URL" > "$target" 2>/dev/null || continue
-        chmod 600 "$target" 2>/dev/null
-        sync "$target" 2>/dev/null   # flush FUSE cache (no-op on non-FUSE)
-        # VERIFY: read back and confirm the bytes actually persisted
-        actual="$(cat "$target" 2>/dev/null || true)"
-        [ "$actual" = "$URL" ] && break
+        tmp="$target.tmp.$$"
+        if printf '%s\n' "$URL" > "$tmp" 2>/dev/null; then
+          chmod 600 "$tmp" 2>/dev/null
+          sync "$tmp" 2>/dev/null   # flush FUSE cache (no-op on non-FUSE)
+          # atomic swap: same-dir rename — parallel sessions see old or new,
+          # never a partial file
+          if mv -f "$tmp" "$target" 2>/dev/null; then
+            # VERIFY: read back and confirm the bytes actually persisted
+            actual="$(cat "$target" 2>/dev/null || true)"
+            [ "$actual" = "$URL" ] && break
+          fi
+        fi
+        rm -f "$tmp" 2>/dev/null
         sleep 0.1   # tiny pause before retry (PolarFS sync window)
       done
       if [ "$actual" = "$URL" ]; then
@@ -219,12 +277,10 @@ if [ "$PUSHED" = "yes" ]; then
         FAIL=1
       fi
     }
-    # Friction #9/#19: write ONLY the $USK copy (PolarFS, mode 0600). The old
-    # /home/sync/ copy is NOT written — ossfs ignores chmod, leaving the PAT
-    # world-readable at 0777. refresh.sh removes stale pre-v3.1 copies as a
-    # one-shot migration. ZK_USK is honored so scratch tests can verify the
-    # credential write safely; a scratch run that did NOT override ZK_USK
-    # must not pollute the REAL /home/user_skills.
+    # scratch-guard: a run that did NOT override ZK_USK must not pollute the
+    # REAL /home/user_skills unless it is the live project. (The historical
+    # /home/sync/ copy is not written at all — ossfs ignores chmod and left the
+    # PAT world-readable at 0777; refresh.sh removes stale pre-v3.1 copies.)
     if { [ "$USK" != /home/user_skills ] || { [ "$PROJ" = "/home/z/my-project" ] && [ "$SYNC" = "/home/sync" ]; }; } then
       write_cred "$USK/${PREFIX}-remote.url"
     fi
@@ -334,9 +390,11 @@ if [ "$FAIL" = 1 ]; then
 fi
 
 # --- 5b. portable zip rebuild (LIVE only) -------------------------------------
-# The platform CONSUMES /home/user_skills/z-container.zip at sub-agent session
-# spawn (observed live, round-5 audit). When it does, the zip is gone until
-# something rebuilds it — so zsave rebuilds it if missing. Best-effort.
+# Sanctioned user_skills write #2 (idempotent + zero-collision): the platform
+# CONSUMES /home/user_skills/z-container.zip at sub-agent session spawn
+# (observed live, round-5 audit). When it does, the zip is gone until
+# something rebuilds it — so zsave rebuilds it if missing. Same bytes from a
+# static source, atomic tmp+mv: concurrent rebuilds are harmless. Best-effort.
 if [ "$PROJ" = "/home/z/my-project" ] && [ "$SYNC" = "/home/sync" ] \
    && [ "$USK" = "/home/user_skills" ] \
    && [ -d "$USK/z-container-kit" ] && [ ! -f "$USK/z-container.zip" ]; then

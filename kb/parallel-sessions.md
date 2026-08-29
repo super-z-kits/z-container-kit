@@ -1,53 +1,84 @@
-# Parallel sessions & shared state (R10-13)
+# Parallel sessions & multi-track safety (v5)
 
-## The hazard: `/home/user_skills` is shared across concurrent chats
+## The hazard: `/home/user_skills` is shared, and it is not git
 
 The platform runs 2-3 concurrent chats under the same account. Each chat gets
-its own container, but `/home/user_skills/` is **per-user, not per-chat** —
-all your concurrent sessions share the same directory. This is a huge boon
-(skills installed once are available in all sessions) but can cause surprises:
+its own container (own overlay, own `/home/sync`, own `/tmp`), but
+`/home/user_skills/` is **per-user** — every concurrent session sees the same
+bytes. And it has **no git**: no conflict detection, no merge, no rebase. A
+write race there cannot be resolved, only prevented.
 
-### What can go wrong
+Sessions may also work on the **same repo** at the same time (two chats, one
+backup repo). That race surface is different — it has git.
 
-1. **Silent overwrites**: session A writes `${ZK_PREFIX}-doppler.env` with a fresh PT;
-   session B's older copy is silently replaced. The "fresh paste wins" rule
-   means the last writer wins — no atomicity, no session attribution.
-2. **Push divergence**: session A and session B both `zsave` to the same
-   backup repo. The first push succeeds; the second is rejected (divergence).
-   Per rule 3 (never force-push — the "Rules you never break" list; NOT a law),
-   resolve with `git pull --rebase origin main` and re-push.
-3. **Phantom file writes**: a parallel session's write to `/home/user_skills/`
-   appears in *your* container's filesystem — e.g. a timestamp on
-   `${ZK_PREFIX}-doppler.env` that you didn't write.
-4. **Contentious writes on shared kits**: if two sessions both run `refresh.sh`
-   on the same kit, the last writer wins. refresh.sh is copy-then-swap atomic,
-   so the worst case is a session running the previous version for one
-   command — never a half-written kit.
+## The v5 answer: static user-skills + git as the conflict handler
 
-### What works
+**Rule 1 — user_skills is read-only for sessions.** Steady-state saves touch
+it ZERO times. The only sanctioned writes, each zero-collision by
+construction:
 
-- zsave's per-container lock (`/tmp/.zsave.lock`) prevents concurrent zsave
-  *within one chat* — but it's useless across chats.
-- zsave degrades gracefully on push rejection: snapshot + repo.tar still
-  refresh locally; push failure is a warning with the exact recovery hint.
-- `git pull --rebase origin main` resolves divergence cleanly in 2 commands.
-- The worklog (`/home/z/my-project/worklog.md`) is per-chat (lives in the
-  overlay, not `/home/user_skills/`), so concurrent sessions don't clobber
-  each other's worklog — but they also can't see each other's entries until
-  they push + the other session pulls.
+1. **Kit install/refresh** (`refresh.sh`) — a conscious account-level
+   operation, atomic copy-then-swap. Concurrent refresh + read worst case: a
+   session runs the previous kit version for one command. Never a torn kit.
+2. **Portable kit zip rebuild** — only when the platform consumed it, same
+   bytes from a static source, atomic tmp+mv. Concurrent rebuilds are
+   harmless (both produce identical bytes).
+3. **Credential files** (`${ZK_PREFIX}-remote.url`, `${ZK_PREFIX}-doppler.env`)
+   — keyed by the project's unique prefix (different repos never share a
+   filename); written atomically (same-dir tmp + mv — a parallel reader sees
+   old-or-new, never partial); and only when the bytes actually changed
+   (zsave skips the write entirely on identical content). For same-repo
+   parallel sessions the accepted semantic is last-writer-wins: every writer
+   just pushed to the SAME repo, so whichever bytes survive are a URL that
+   last worked. Doppler env files additionally honor **fresher-wins**: never
+   overwrite a file whose `DOPPLER_PT_STORED_AT` timestamp is newer than
+   yours (an older chat's stale PT must not clobber a fresh rotation).
 
-### Mitigations
+Anything else a session might want to persist belongs in the REPO (git-tracked
+— mergeable) or in per-chat storage (`/home/sync`, `/tmp/my-project` —
+container-local, no cross-session race). Per-repo customization lives in
+`.agents/config` inside the repo, never in user_skills.
 
-- **Before destructive ops** (reset --hard, force-install), check if the
-  file you're about to overwrite was recently modified by another session:
-  `stat /home/user_skills/<file>` — if the mtime is more recent than your
-  session start, another session may have written it.
-- **For shared credential files** (`${ZK_PREFIX}-doppler.env`, `${ZK_PREFIX}-remote.url`): treat
-  them as read-mostly. If you must write, preserve any fields you didn't
-  set (e.g. don't blow away `DOPPLER_PT_STORED_AT` if it's already there).
-- **For kit upgrades**: running `refresh.sh` is idempotent and atomic
-  (copy-then-swap). Concurrent installs are safe — the last one wins, and
-  the result is always a complete kit.
-- **For backup repo pushes**: if your push is rejected, don't force-push.
-  `git pull --rebase origin main` and re-push. Your local commit will
-  land on top of the other session's.
+**Rule 2 — same-repo divergence is git's problem, and git solves it.**
+Session A and session B both zsave to one remote:
+
+- First push wins; the second is rejected (non-fast-forward).
+- zsave detects the rejection and auto-recovers ONCE:
+  `git pull --rebase origin <branch>` then retry the push. Histories
+  interleave cleanly; nothing is lost; no agent intervention needed.
+- Only a same-line conflict (both sessions edited the same file) falls back
+  to a human decision — and git names the exact file and hunks.
+- **Never force-push** (rule 3). Force-push overwrites the only good copy
+  with your possibly-broken local state — the one deadly move in the whole
+  flow.
+
+**Rule 3 — in-container concurrency serializes; it does not fail.** zsave
+flocks `/tmp/.zsave.lock` with a WAIT (default 180s): a second concurrent
+save queues silently and runs after the first. Exit 75 (nothing changed)
+only fires after a full timeout. Sub-agents still leave saves to the
+coordinating agent — one writer avoids interleaving with its git work; it is
+an ownership convention, not a corruption guard.
+
+## What used to go wrong (pre-v5) — and where it went
+
+- **Every-push credential rewrite** wrote `user_skills/<prefix>-remote.url`
+  unconditionally and non-atomically — mtime churn and partial-read windows
+  for parallel sessions. → Now: write-only-on-change + atomic swap.
+- **"Fresh paste wins" PT clobber**: a session holding an older PT could
+  overwrite a newer one; writes were `cat > file` (non-atomic). → Now:
+  fresher-wins timestamp guard + atomic swap (secrets-vault-kit recipe).
+- **Push rejection handed the recovery to the agent** (read the hint, run
+  pull --rebase, re-save — three extra steps of tax). → Now: auto-recovery.
+- **Lock contention exited 75** and demanded retry choreography. → Now: wait.
+
+## Practical notes
+
+- A parallel session's write to user_skills can appear in *your* container's
+  filesystem mid-session (phantom mtimes). With the static rule the only
+  files this can happen to are the sanctioned ones — expected, harmless.
+- Before a CONSCIOUS destructive op (e.g. re-running refresh.sh, deleting a
+  stale credential), `stat` the file: an mtime newer than your session start
+  means a parallel session touched it — look before you leap.
+- The worklog is per-container (repo-dir overlay). Concurrent sessions merge
+  their worklogs the same way they merge code: commit, push, and let git
+  rebase one on top of the other (zsave does this automatically on push).

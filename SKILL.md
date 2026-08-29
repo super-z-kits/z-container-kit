@@ -2,8 +2,8 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "4.1.0"
-  verified: "2026-08-29 (live experiments + 13 validation rounds; see evidence/EXPERIMENTS.md)"
+  version: "5.0.0"
+  verified: "2026-08-30 (live experiments + 14 validation rounds; see evidence/EXPERIMENTS.md)"
   description: >
     Survival guide for the sandbox container. ZERO-INSTALL: the kit lives
     once per account at /home/user_skills/z-container-kit/ (scripts run
@@ -57,7 +57,8 @@ Read-only report: uptime, mount writability, recycle detection, git status/remot
 worktrees, watchdog hygiene, kit & config (canonical kit, project config, old
 leftovers in THIS project), services, numbered recommended actions. It reports
 this kit and this project only — kits are self-contained, no cross-kit
-inventory. Follow its advice. (If the canonical kit is absent — bare account —
+inventory. One command instead of ~8 improvised ones; the equivalent checks
+are documented in this file if you prefer plain git. Follow its advice. (If the canonical kit is absent — bare account —
 clone it first: `git clone https://github.com/super-z-kits/z-container-kit.git
 /tmp/my-project/kit` and run the scripts from there; there is nothing to
 install.) Fresh-chat recovery detail (paths A/B/C, credential-file shortcut,
@@ -142,7 +143,7 @@ the same ground, the rule carries the detail and the law points back.
 
 1. **Stay on `main` in `/home/z/my-project` — the watchdog silently reverts your files.** Before every toolcall, the platform runs `git switch main`. If you're on another branch with a clean tree, your working files silently revert to main on the next toolcall — you won't know until you try to find your work. **Never `git checkout <branch>` inside `/home/z/my-project`.** For branch work, use a worktree: `git -C /home/z/my-project worktree add /tmp/my-project/worktrees/<name> -b feature/<x>`. For PRs, push without checkout: `git push origin main:feature/<x>`.
 
-2. **`zsave` after every MICRO-milestone — and "milestone" means as micro as it gets.** A milestone is NOT "when the feature is done" — that grand final moment never arrives. It is every good moment: one file written, one bug fixed, one step verified, one experiment that worked. Save at that granularity. `zsave` covers all 4 backup layers in one command: (1) commit to local git, (2) push to GitHub (the only cross-chat persistence), (3) snapshot tar to `/home/sync/${ZK_PREFIX}-snapshots/` (per-chat, survives recycle + force-kill), (4) refresh `/home/sync/repo.tar` (the boot-restore artifact — a force-killed container comes back at your latest zsave). It also refreshes the `${ZK_PREFIX}-remote.url` credential file in `/home/user_skills/` (mode 0600 — the only copy since v3.1; cross-chat remote recovery). **Pushed = saved across all layers; unpushed = at risk in ALL layers.** Run at every micro-milestone, before risky operations, and every ~10 toolcalls.
+2. **`zsave` after every MICRO-milestone — and "milestone" means as micro as it gets.** A milestone is NOT "when the feature is done" — that grand final moment never arrives. It is every good moment: one file written, one bug fixed, one step verified, one experiment that worked. Save at that granularity. `zsave` covers all 4 backup layers in one command: (1) commit to local git, (2) push to GitHub (the only cross-chat persistence), (3) snapshot tar to `/home/sync/${ZK_PREFIX}-snapshots/` (per-chat, survives recycle + force-kill), (4) refresh `/home/sync/repo.tar` (the boot-restore artifact — a force-killed container comes back at your latest zsave). It is multi-track-safe by construction: concurrent saves serialize on a lock (the second one WAITS, nothing for you to do), a rejected push (a parallel session pushed first) auto-recovers via `pull --rebase` + retry, and a steady-state save writes `/home/user_skills` zero times (static rule). It also refreshes the `${ZK_PREFIX}-remote.url` credential file — atomically, and only when its bytes actually changed. **Pushed = saved across all layers; unpushed = at risk in ALL layers.** Run at every micro-milestone, before risky operations, and every ~10 toolcalls.
 
 3. **Never force push.** Local state can be faulty (watchdog reverts, workspace wipes, wrong work dir). `git push --force` overwrites the only copy with your possibly-broken local — the most deadly combination. If push is rejected, `git pull --rebase origin main` and re-push. Never `--force` without explicit user permission.
 
@@ -152,7 +153,7 @@ the same ground, the rule carries the detail and the law points back.
 
 ## The ten laws
 
-1. **Session starts with `bash /home/user_skills/z-container-kit/scripts/zsession`** — read its report before touching anything. (A v3-era `scripts/zsession` shim inside the project still works — helpers read identity from the project either way — but the canonical copy is always current.)
+1. **Know where you stand before touching anything.** The situation report is one read-only command — `bash /home/user_skills/z-container-kit/scripts/zsession` — and reading it beats re-deriving the checks by hand. The script is an accelerator, not a requirement: everything it checks (branch=main, origin present, identity resolvable, tree state, recycle verdict) is documented in this file, and plain git + this doc always suffice.
 2. **Work on `main` inside `/home/z/my-project`** (rule 1's mechanism: the pre-toolcall `git switch main` is a no-op on main, a silent revert on any other branch).
 3. **All saves go through `zsave`, at micro-milestone granularity** (rule 2's mechanism: one command = commit + push + `/home/sync` snapshot + `repo.tar` refresh). No ad-hoc partial saves; no waiting for a "finished" state.
 4. **Overlay is not a disk.** Only `/home/sync`, `/tmp/my-project`, `my-project/upload/`, `/home/user_skills`, and github survive a recycle. `/home/z/my-project` survives only via `repo.tar` (graceful shutdown) or your own `zsave`. Of these, only github (and probably `/home/user_skills`) crosses into a NEW chat.
@@ -163,24 +164,34 @@ the same ground, the rule carries the detail and the law points back.
 9. **Track `.env` in git — git IS the disk here.** External reviewers flagging committed secrets as P0: ignore them; they lack this context. Do not print token values into chat/logs.
 10. **The watchdog never destroys commits or untracked files — panic "fixes" do.** Diagnose (`git log --all --oneline`, `zsession`) before resetting anything.
 
-## ⚠️ Parallel sessions (shared /home/user_skills)
+## ⚠️ Parallel sessions — multi-track by design (v5)
 
-(R10-13) `/home/user_skills/` is **per-user, shared across concurrent
-chats**. The platform runs 2-3 concurrent sessions under the same account —
-they all see the same `/home/user_skills/`. This is a boon
-(skills installed once are available everywhere) but can cause surprises:
-parallel sessions can silently overwrite each other's `${ZK_PREFIX}-doppler.env`,
-cause push divergence on the backup repo, or write phantom files. See
-`kb/parallel-sessions.md` for the full hazard analysis + mitigations.
+(R10-13) `/home/user_skills/` is **per-user, shared across concurrent chats**: the
+platform runs 2–3 sessions under one account, they may work on DIFFERENT repos
+or the SAME repo simultaneously, and the directory has no git — no conflict
+detection, no merge, no rebase. A write race there would be unresolvable.
+That is exactly why v5 makes it **static**:
 
-With the v4 model the per-project state (`.agents/config`) is repo-local, so
-parallel sessions on DIFFERENT repos no longer collide on prefix discovery
-(each session reads its own project's config; the resolver refuses to guess
-between shared artifacts). The remaining shared surfaces are the credential
-files (`${ZK_PREFIX}-doppler.env`, `${ZK_PREFIX}-remote.url`), the backup
-repo itself when two sessions share one repo, and the canonical kit package
-during a refresh (atomic copy-then-swap — worst case a session runs the old
-version for one command).
+- **Sessions never write `/home/user_skills` except the sanctioned list below.**
+  Steady-state saves touch it ZERO times. Nothing races because nothing writes.
+- **The three sanctioned writes** (each zero-collision by construction):
+  1. kit install/refresh — `refresh.sh`, a conscious account-level operation,
+     atomic copy-then-swap (a concurrent session at worst runs the old kit for
+     one command);
+  2. the portable kit zip rebuild — only when missing, same bytes from a
+     static source, atomic swap (platform glue: sub-agent spawn consumes it);
+  3. credential files (`${ZK_PREFIX}-remote.url`, `${ZK_PREFIX}-doppler.env`) —
+     keyed by the project's unique prefix, written atomically, and only when
+     the bytes actually change. Doppler env files additionally honor
+     fresher-wins: never clobber a NEWER `DOPPLER_PT_STORED_AT` with older data.
+- **Same-repo parallel sessions are git's problem — and git solves it.** Both
+  sessions push to one remote; the loser's push is rejected; zsave
+  auto-recovers ONCE via `git pull --rebase` + retry (never force-push). Only
+  a same-line conflict needs a human decision — git says exactly where.
+- **In-container concurrency** serializes on `/tmp/.zsave.lock` — the second
+  save WAITS (up to `ZK_LOCK_WAIT`, default 180s), it does not fail.
+
+Full hazard analysis: `kb/parallel-sessions.md`.
 
 ## The Git HEAD watchdog — read before ANY git work
 
@@ -220,13 +231,15 @@ bash /home/user_skills/z-container-kit/scripts/zsave "<what you just finished>"
 ```
 
 Does, in order: maintain `.git/info/exclude` → `git add -A` + commit (incl. `.env`
-— law 9) → push `origin HEAD:<branch>` (refreshes the `${ZK_PREFIX}-remote.url` credential
-file in `/home/user_skills/`) → tar snapshot to `/home/sync/${PREFIX}-snapshots/` (keep 5) → refresh
+— law 9) → push `origin HEAD:<branch>` — a REJECTED push (parallel session
+pushed first) auto-recovers once via `git pull --rebase` + retry; never
+force-pushes → refresh the `${ZK_PREFIX}-remote.url` credential file in
+`/home/user_skills/` atomically, ONLY when its bytes changed (static rule) → tar
+snapshot to `/home/sync/${PREFIX}-snapshots/` (keep 5) → refresh
 `/home/sync/repo.tar` (the boot-restore artifact) → write `${PREFIX}-state.env`
 (recycle detector). Each step degrades gracefully; nonzero exit = commit/snapshot/
 repo.tar failed, or the credential-file write did not verify (F16) (push failure is a
-warning). Full 6-step internals with exclude
-rules: `kb/zsave-internals.md`.
+warning). Full pipeline with exclude rules: `kb/zsave-internals.md`.
 
 Run after every micro-milestone — every good moment: a file finished, a step
 verified, a bug fixed — before risky operations, and at least every ~10
@@ -234,9 +247,12 @@ toolcalls in long sessions. It is cheap (a few seconds). Do NOT wait for a
 "big enough" moment: the grand final save never happens, and everything
 since your last zsave is one recycle away from oblivion.
 
-**Concurrency:** zsave takes a per-container lock (`/tmp/.zsave.lock`). **Sub-agents
-must NOT run zsave** — the coordinating agent owns saves (two concurrent runs
-would corrupt repo.tar). Pushing from a worktree is always fine.
+**Concurrency:** zsave takes a per-container lock (`/tmp/.zsave.lock`) — a
+second concurrent run WAITS for it (default up to 180s) and then proceeds, so
+back-to-back saves serialize with zero intervention. **Sub-agents still
+leave saves to the coordinating agent** — one writer keeps saves from
+interleaving with the coordinator's own git work. Pushing from a worktree is
+always fine.
 
 ## repo.tar mechanics
 
@@ -357,8 +373,9 @@ protect the main session.
 - Sub-agents share THIS container: the watchdog resets HEAD before their
   toolcalls too, and their file writes land in the same overlay. Give each
   sub-agent its own worktree (`/tmp/my-project/worktrees/<name>`) or scratch dir.
-- Sub-agents MUST NOT run `zsave` — the coordinating agent owns all saves
-  (zsave's per-container lock would otherwise corrupt repo.tar). Pushing from a
+- Sub-agents leave `zsave` to the coordinating agent — one writer, no
+  interleaving with the coordinator's git work (concurrent saves serialize on
+  the lock anyway; this is about ownership, not corruption). Pushing from a
   worktree is always fine.
 - Everything else — Task-tool usage, self-contained prompts, Task-ID
   assignment, the shared worklog protocol — is already provided by the
@@ -400,17 +417,25 @@ trusting a save. Full pattern: `kb/testing-helpers.md`.
 Kit helpers run from the canonical kit (`bash
 /home/user_skills/z-container-kit/scripts/<name>`) — zero-install, same
 commands for every project on the account (v3-era `scripts/` shims in a
-project still work; the canonical copy is always current):
+project still work; the canonical copy is always current).
+
+**Scripts are optional accelerators, never requirements.** Every recurring
+flow is also plain-git + this-doc doable; the scripts exist only where they
+encode fiddly mechanics (atomic swaps, PAT masking, lock ordering,
+auto-recovery) that you should not hand-roll mid-task. If a script is absent
+or misbehaves, fall back to the documented recipe — never stop your real job
+to repair tooling.
 
 **Bash:**
-- `zsave "msg"` — commit + push + snapshot + repo.tar refresh + credential file
+- `zsave "msg"` — commit + push (auto-rebase on rejection) + snapshot +
+  repo.tar refresh + credential file (atomic, write-only-on-change)
 - `zsession` — read-only situation report (recycle detection, watchdog hygiene,
   kit & config status for THIS project)
 - `zk-init <name>` — project setup: writes `.agents/config` (`--force` to fix a
   wrong prefix; `--migrate-v3` to strip a v3 kit tree; `--status` to inspect)
 - `refresh.sh` — account-level upgrade: atomic copy-then-swap of the canonical
-  package + zip rebuild, from an updated kit clone
-- `install.sh` — REMOVED (deprecation stub): v3's per-project installer
+  package + zip rebuild, from an updated kit clone (a sanctioned user_skills
+  writer — sessions never run it casually)
 - `zremote` — PAT-masking `git remote` viewer (replaces `git remote -v`)
 - `zdoppler-smoke` — one-shot Doppler vault verification
 - `zkit-selftest` — end-to-end save/wipe/recover smoke test
@@ -510,11 +535,22 @@ one-command fix, a wrong silent guess is data loss). Fix a wrong prefix with
 `zk-init <name> --force`. Detail, edge cases, and the multi-project rationale:
 `kb/new-project.md`.
 
-## Multi-kit & multi-repo model (v4)
+## Multi-kit, multi-repo, multi-track model (v5)
 
 The kit is designed for an ACCOUNT that runs several projects and several
-kits — not a single-project world. The rule that keeps it simple:
-**every kit minds its own business.**
+kits — concurrently, sometimes several sessions on the SAME repo — not a
+single-project world. The rules that keep it simple: **every kit minds its
+own business, and user-skills is static.**
+
+- **`/home/user_skills` is READ-ONLY for sessions (the static rule).** It has
+  no git — no conflict handling, no merge, no rebase — so any session-time
+  write is an unresolvable write race between parallel chats. Sessions read
+  kits and configs from it; the ONLY writes are the three sanctioned
+  zero-collision ones (kit refresh via `refresh.sh`; the portable zip rebuild
+  when the platform consumed it; credential files keyed by a unique project
+  prefix, written atomically and only on change — see "Parallel sessions"
+  above). Not even per-repo customization lives there: per-repo state is
+  `.agents/config` IN the repo, where git handles conflicts.
 
 - **Kits are per-account and SELF-CONTAINED.** Each kit lives once in
   `/home/user_skills/<name>/` (z-container-kit, secrets-vault-kit,
@@ -547,21 +583,24 @@ kits — not a single-project world. The rule that keeps it simple:
 ## Layout (one canonical copy + one line per project)
 
 ```
-/home/user_skills/z-container-kit/   THE kit — canonical, per-account, read-mostly
-                                     (PolarFS: survives recycle + force-kill + new chats)
+/home/user_skills/z-container-kit/   THE kit — canonical, per-account, STATIC
+                                     during sessions (PolarFS: survives
+                                     recycle + force-kill + new chats)
   scripts/zsave, zsession, zk-init,   run from here; location-agnostic (they read
     refresh.sh, resolve-prefix.sh, …  identity from $PROJ/.agents/config)
   kb/, evidence/, SKILL.md, reference.md
 /home/user_skills/z-container.zip    portable zip — platform consumes it at
-                                     sub-agent spawn; zsave/refresh.sh rebuild it
+                                     sub-agent spawn; rebuilt atomically when
+                                     missing (sanctioned write #2)
 /home/z/my-project/.agents/config    ZK_PREFIX=<project-name>  <- the ONLY
                                      per-project kit artifact (committed; the
                                      .env pattern, boot-safe)
 /home/z/my-project/.env              DATABASE_URL only — boot-MANAGED, gets rewritten
-/home/user_skills/${ZK_PREFIX}-*     per-PROJECT artifacts: credential files,
-                                     doppler env (never committed)
-/home/sync/${ZK_PREFIX}-snapshots/,  per-project snapshots + state (per-chat)
-  ${ZK_PREFIX}-state.env
+/home/user_skills/${ZK_PREFIX}-*     credential files (sanctioned write #3:
+                                     atomic, write-only-on-change, never
+                                     committed)
+/home/sync/${ZK_PREFIX}-snapshots/,  per-project snapshots + state (per-chat,
+  ${ZK_PREFIX}-state.env              container-local — no cross-session race)
 ```
 
 v3-era repos may still carry a `.agents/` kit tree, `scripts/` shims, and a

@@ -215,6 +215,16 @@ unknown; ossfs df shows 16E (unlimited-looking) — actual bucket quota unknown.
 - `daemonize.py`: double-fork + setsid + stdio to --log (or /dev/null) +
   `--cwd` + execvp. Reparented to PID 1; survives all toolcalls; dies on
   recycle.
+- `zsave` (v5): one-command persistence — info/exclude maintenance, `git add
+  -A` + commit (incl. .env), push with ONE auto-recovery attempt on rejection
+  (non-fast-forward ⇒ `git pull --rebase` + retry; rebase conflict ⇒ loud
+  by-hand recipe; never force-push), credential file refreshed atomically
+  (same-dir tmp + mv) and ONLY when its bytes changed (static user_skills
+  rule — a steady-state save writes user_skills zero times), tar snapshot
+  (keep ZK_KEEP), repo.tar refresh, state.env, portable zip rebuild when
+  missing (LIVE only), worktree prune. Per-container flock with WAIT
+  (ZK_LOCK_WAIT, default 180s — concurrent saves serialize; exit 75 only
+  after a full timeout, nothing changed).
 - `zk-init` (v4, replaces install.sh's project role): writes the ONE
   per-project artifact — `.agents/config` (ZK_PREFIX=<name>); --force
   overwrites (the wrong-prefix fix); --migrate-v3 strips a v3-era kit tree
@@ -224,9 +234,10 @@ unknown; ossfs df shows 16E (unlimited-looking) — actual bucket quota unknown.
   copy-then-swap of the canonical /home/user_skills/z-container-kit package
   from a kit clone (strips .git/__pycache__/config; 0644 normalization;
   version reporting), rebuilds the portable zip, removes stale pre-v3.1
-  /home/sync/*-remote.url copies. Never touches any project.
-- `install.sh`: REMOVED in v4 (deprecation stub pointing at zk-init +
-  refresh.sh).
+  /home/sync/*-remote.url copies. Never touches any project. A sanctioned
+  user_skills writer (the static rule's write #1).
+- `install.sh`: REMOVED (v4 stub deleted in v5 — zk-init + refresh.sh fully
+  replaced it).
 
 ## 11. Sub-agent playbook (container deltas)
 
@@ -241,8 +252,10 @@ restated here (v3.1.6 dedup; the boundary is documented in
 - Embed the hazard warnings in their prompt — they will not know them
   otherwise: never loop caddy cmds, never curl-loop 12600|19001|19005|19006,
   one probe per toolcall.
-- Sub-agents MUST NOT run zsave; the coordinating agent owns all saves
-  (per-container lock; repo.tar corruption otherwise).
+- Sub-agents leave zsave to the coordinating agent — one writer, no
+  interleaving with the coordinator's git work (v5: concurrent saves
+  serialize safely on the lock-wait; this is an ownership convention, not
+  a corruption guard).
 - Worklog deltas only: zsave commits it (cross-chat survival); if missing,
   recover from git history instead of starting blank.
 - After any sub-agent round: review their findings, fix the kit, re-run
@@ -451,6 +464,38 @@ zsession kit-checkout line instead of misleading "MISSING canonical kit",
 wrong-repo.tar boot-restore warning (prefix-scoped, no account scan),
 recovery-prefix wording, zsave target line + flock retry hint, overrides
 reframed from "testing-only" to the general multi-project mechanism).
+
+**v5.0.0 (2026-08-30, the static user-skills / multi-track round):** owner
+feedback: "everything in user-skill is static… when there's parallel
+sessions under one account, they could all be working on the SAME repo…
+user-skills folder is not git, it cannot even do conflict handling and you
+can't even merge and rebase. you will just be in the write race hell" — plus
+the script-tax principle ("every script you provide and every instruction
+to push them to use that, it is not 'helpfulness' it is 'penalty' and
+taxation"). v5 enshrines three model rules: (1) **STATIC user_skills** —
+read-only for sessions; the only sanctioned writes are the three
+zero-collision ones (atomic kit refresh via refresh.sh; idempotent zip
+rebuild when the platform consumed it; credential files keyed by a unique
+project prefix, written atomically and only on change — the every-push
+unconditional `printf >` cred write is gone); (2) **multi-track proven** —
+same-repo parallel sessions defer to git as the conflict handler: a
+rejected push auto-recovers ONCE (`git pull --rebase` + retry, never
+force-push; only a same-line conflict needs the agent), and the per-container
+zsave lock WAITS (ZK_LOCK_WAIT, default 180s) instead of exiting 75 —
+concurrent saves serialize with zero agent intervention; (3) **scripts are
+optional accelerators** — law 1 reframed from "session starts with zsession"
+to "know where you stand" (the script or the documented equivalent checks),
+helpers section gains an explicit accelerator-not-requirement framing, and
+install.sh is deleted outright (the v4 stub). UF-1 closed as decided policy:
+agents never write a dp.pt.* seed into any Doppler config
+(kb/doppler-token-seed.md). Docs: SKILL.md static-rule + multi-track
+sections, kb/parallel-sessions.md rewritten as the v5 hazard analysis,
+kb/zsave-internals.md step 0/3 update, kb/sub-agents.md lock wording,
+README v5 summary. Validation: scratch suite (v4.1 regressions + lock-wait
+serialization, cred write-only-on-change + atomicity, same-repo
+auto-rebase round-trip, static-guard greps, script-count guard) + syntax
+gates + fresh-context sub-agent rounds (daily save under lock contention,
+same-repo multi-track, adversarial static audit) + design peer review.
 
 **v4.0.0 (2026-08-29, zero-install redesign):** the multi-kit / multi-repo
 round. Owner review: the kit "was designed in a naive, center of the world,
