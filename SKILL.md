@@ -2,7 +2,7 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "3.1.1"
+  version: "3.1.2"
   verified: "2026-08-29 (live experiments + 11 validation rounds; see evidence/EXPERIMENTS.md)"
   description: >
     Survival guide for the sandbox container. The kit is instantiated into
@@ -70,7 +70,10 @@ tail -80 /home/z/my-project/worklog.md
 The worklog is committed (survives cross-chat). If it is missing, recover it
 from git history before recreating it: `git log --all --oneline -- worklog.md`,
 then `git show <last-commit-that-had-it>:worklog.md > worklog.md` — do NOT
-start a blank file if history still has the content.
+start a blank file if history still has the content. If there is truly no
+prior worklog (brand-new repo), create it following the protocol in
+`kb/sub-agents.md` (the append-only template with Task ID / Work Log /
+Stage Summary).
 
 **4. If the workspace is the boot template** (single "Initial commit", no
 worklog, `scripts/` empty) — cold start. Wire the remote BEFORE the kit
@@ -81,7 +84,7 @@ install so the installer can derive `ZK_PREFIX` from the origin URL
 git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git
 git -C /home/z/my-project fetch origin
-git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK before reset
+git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK (brand-new/empty remote? origin/main doesn't exist yet — expected, move on)
 git -C /home/z/my-project reset --hard origin/main     # skip if remote is empty/new
 bash /tmp/my-project/kit/scripts/install.sh            # LOAD-BEARING: instantiates .agents/ (+config with ZK_PREFIX), scripts/ shims, skills/ symlink
 bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
@@ -94,10 +97,14 @@ read it with `source /home/z/my-project/.agents/config` before using
 PAT is typed exactly once (the remote-add line). The kit repo is public — clone
 needs no PAT. Two alternatives for the remote-add step:
 
-- **B1 — credential file survived** (most common in Path B): replace the
-  remote-add with `git remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`
-  (the prefix is the filename part before `-remote.url` — there is exactly one
-  per project; `ls /home/user_skills/*-remote.url` lists what survived).
+- **B1 — credential file survived** (most common in Path B): find it with
+  `ls /home/user_skills/*-remote.url` (the prefix is the filename part before
+  `-remote.url` — there is one per project; `${ZK_PREFIX}` is not defined in
+  your shell yet, so resolve the path first):
+  ```bash
+  CF=$(ls /home/user_skills/*-remote.url | head -1)   # multiple? pick YOUR project's
+  git -C /home/z/my-project remote add origin "$(cat "$CF")"
+  ```
   Still run the sanity-check log line — a stale credential file (audit F16)
   can silently point at a different repo.
 - **B2 — no PAT, no credential file, but Doppler vault has GH_PAT** (Path C,
@@ -196,11 +203,12 @@ bash /home/z/my-project/scripts/zsave "milestone message"
 ```
 
 Does, in order: maintain `.git/info/exclude` → `git add -A` + commit (incl. `.env`
-— law 9) → push `origin HEAD:<branch>` (refreshes `${ZK_PREFIX}-remote.url` credential
-files) → tar snapshot to `/home/sync/${ZK_PREFIX}-snapshots/` (keep 5) → refresh
-`/home/sync/repo.tar` (the boot-restore artifact) → write `${ZK_PREFIX}-state.env`
+— law 9) → push `origin HEAD:<branch>` (refreshes the `${ZK_PREFIX}-remote.url` credential
+file in `/home/user_skills/`) → tar snapshot to `/home/sync/${PREFIX}-snapshots/` (keep 5) → refresh
+`/home/sync/repo.tar` (the boot-restore artifact) → write `${PREFIX}-state.env`
 (recycle detector). Each step degrades gracefully; nonzero exit = commit/snapshot/
-repo.tar failed (push failure is a warning). Full 6-step internals with exclude
+repo.tar failed, or the credential-file write did not verify (F16) (push failure is a
+warning). Full 6-step internals with exclude
 rules: `kb/zsave-internals.md`.
 
 Run after every meaningful milestone, before risky operations, and at least
@@ -368,15 +376,15 @@ Kit helpers run from `scripts/` (git-tracked shims that exec into
 **Bash:**
 - `zsave "msg"` — commit + push + snapshot + repo.tar refresh + credential file
 - `zsession` — read-only situation report (recycle detection, watchdog hygiene)
-- `install.sh` — installs the kit + helpers everywhere (idempotent)
-- `daemonize.py` — double-fork background process that survives toolcalls
-- `wdt_watch.py` — watchdog observation helper (forensic)
+- `install.sh` — instantiates the kit into `.agents/` (idempotent, preserves config)
 - `zremote` — PAT-masking `git remote` viewer (replaces `git remote -v`)
 - `zdoppler-smoke` — one-shot Doppler vault verification
 - `zkit-selftest` — end-to-end save/wipe/recover smoke test
 - `zcleanup-backups` — prune old `.pre-update-backup-*` / `.pre-export-*` dirs from `/home/user_skills/` (OF-14: keeps last 2 per skill by default; `zcleanup-backups 5` to keep more, `0` to delete all)
 
-**Python (complementary):**
+**Python (real copies in `scripts/` — `python3 scripts/<name>`):**
+- `daemonize.py` — double-fork background process that survives toolcalls
+- `wdt_watch.py` — watchdog observation helper (forensic)
 - `doppler_fetch.py` — urllib version of `zdoppler-smoke`; stages secrets to `/tmp/my-project/doppler-secrets.json`
 - `verify_access.py` — urllib access verifier for GitHub / Cloudflare / Supabase (Supabase WAF needs `User-Agent: ${ZK_PREFIX}-verify`)
 

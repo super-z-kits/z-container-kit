@@ -134,8 +134,10 @@ fi
 ZS_MSG="${1:-}"
 if [ -n "$(git status --porcelain)" ]; then
   git add -A
-  # m5: scan staged files for secret-sounding basenames
-  SECRET_HITS="$(git diff --cached --name-only --diff-filter=A 2>/dev/null | grep -iE '(^|/)(secret|token|key|credential|\.env)' || true)"
+  # m5: scan staged files for secret-sounding basenames — EXCLUDING kit-owned
+  # paths (.agents/, skills/, kit kb modules like secrets-audits.md are
+  # known-good docs, and warning on every first kit commit is noise)
+  SECRET_HITS="$(git diff --cached --name-only --diff-filter=A 2>/dev/null | grep -vE '^(\.agents|skills|z-container-kit)/' | grep -iE '(^|/)(secret|token|key|credential|\.env)' || true)"
   if [ -n "$SECRET_HITS" ]; then
     echo "[warn] m5: staging files whose basename matches secret-sounding pattern:" >&2
     printf '%s\n' "$SECRET_HITS" | sed 's/^/         /' >&2

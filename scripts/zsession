@@ -222,7 +222,7 @@ if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origi
     [ -f "$p/scripts/install.sh" ] && { KITSRC="$p"; break; }
   done
   CRED=""
-  for cf in /home/user_skills/${PREFIX}-remote.url "$SYNC/${PREFIX}-remote.url"; do
+  for cf in "$USK/${PREFIX}-remote.url" "$SYNC/${PREFIX}-remote.url"; do
     [ -s "$cf" ] && { CRED="$cf"; break; }
   done
   echo "COLD START detected (no remote, no zsave state). Exact sequence:"
@@ -284,13 +284,13 @@ if [ "$LIVE" = 1 ]; then
   # Round-11 F4/F9: the worklog is COMMITTED (survives cross-chat). If it is
   # missing, first try to recover it from git history before starting blank —
   # a "cleanup" commit once removed it from tracking and the content lived on
-  # only in history.
+  # only in history. The protocol/template lives in kb/sub-agents.md.
   if [ ! -f "$PROJ/worklog.md" ]; then
     WL_HIST="$(git -C "$PROJ" log --all --oneline -- worklog.md 2>/dev/null | head -1)"
     if [ -n "$WL_HIST" ]; then
       rec "worklog.md missing but present in history ($WL_HIST) — recover: git -C $PROJ show <that-commit>:worklog.md > $PROJ/worklog.md"
     else
-      rec "create worklog: touch $PROJ/worklog.md  (multi-agent coordination surface, COMMITTED — see SKILL.md 'Sub-agents & coordination')"
+      rec "create worklog: touch $PROJ/worklog.md  (append-only protocol + template: kb/sub-agents.md — COMMITTED, survives cross-chat)"
     fi
   fi
 fi

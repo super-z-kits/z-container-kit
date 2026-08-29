@@ -15,13 +15,18 @@
 
 ## The flow
 
+Always name the project explicitly — never rely on auto-discovery for a NEW
+repo (discovery can inherit another project's prefix from shared
+`/home/user_skills/` artifacts):
+
 ```bash
 # 1) wire the workspace remote FIRST if you have the PAT (lets install.sh
-#    derive ZK_PREFIX from the origin URL basename):
+#    fall back to URL-basename derivation if you forget ZK_PREFIX):
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git
 
-# 2) install (from the read-only package — or a fresh clone of the kit repo):
-bash /home/user_skills/z-container-kit/scripts/install.sh
+# 2) install with an EXPLICIT prefix (from the read-only package, or a fresh
+#    clone of the kit repo):
+ZK_PREFIX=<your-project-name> bash /home/user_skills/z-container-kit/scripts/install.sh
 #    -> instantiates .agents/, writes .agents/config, creates scripts/ shims,
 #       skills/z-container symlink, refreshes the package + portable zip
 
@@ -32,6 +37,11 @@ git -C /home/z/my-project commit -m "kit: .agents/ instantiated"
 # 4) first save (anchors repo.tar + snapshots + credential file):
 bash /home/z/my-project/scripts/zsave "project bootstrap checkpoint"
 ```
+
+If you forgot `ZK_PREFIX` in step 2, the installer auto-discovers one and
+WARNS; a wrongly baked prefix is fixed with:
+`rm .agents/config && ZK_PREFIX=<name> bash install.sh` (env-var re-runs
+cannot override an existing config — preservation is what makes upgrades safe).
 
 ## Choosing ZK_PREFIX
 
@@ -51,9 +61,14 @@ How install.sh picks it (first match wins):
 1. existing `.agents/config` (preserved on every upgrade — never re-derived)
 2. `ZK_PREFIX` env var passed to install.sh
 3. migration from a legacy `/home/user_skills/*-config.env` (exactly one file)
-4. derivation from the origin URL basename (`.../zk-stress-test.git` → `zk-stress-test`)
-5. interactive prompt (only when a TTY exists — agent toolcalls have none)
-6. fail loudly with the exact fix commands
+4. durable-artifact scan: `/home/sync/*-state.env`, `/home/sync/*-snapshots/`,
+   `/home/user_skills/*-remote.url`, `/home/user_skills/*-doppler.env` — any
+   prefix a prior session of ANY of your projects left behind (this is why an
+   explicit `ZK_PREFIX` matters on multi-project accounts: the scan cannot
+   tell projects apart)
+5. derivation from the origin URL basename (`.../zk-stress-test.git` → `zk-stress-test`)
+6. interactive prompt (only when a TTY exists — agent toolcalls have none)
+7. fail loudly with the exact fix commands
 
 ## Why config lives in .agents/ (design notes)
 

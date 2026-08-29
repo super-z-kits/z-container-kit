@@ -59,7 +59,8 @@ container — ask the user for it (or a fresh token), then
 credential file, when present, already names the right one). Then
 `git fetch && git reset --hard origin/main` and reinstall the kit —
 `bash /home/user_skills/z-container-kit/scripts/install.sh`. The reinstall is
-LOAD-BEARING: `skills/` is git-ignored, so only install.sh restores
+LOAD-BEARING: `skills/` is kept out of git (install.sh maintains
+`/skills/` in `.git/info/exclude`), so only install.sh restores
 `skills/z-container` (and normalizes `scripts/` shims + `.agents/`).
 (`git clone` into my-project fails — the boot template is not empty.)
 
