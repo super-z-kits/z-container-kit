@@ -64,7 +64,7 @@ git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<rep
 
 # 2) verify + restore the workspace (skip the reset if the remote is brand-new/empty)
 git -C /home/z/my-project fetch
-git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK before reset
+git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g'   # SANITY CHECK before reset
 git -C /home/z/my-project reset --hard origin/main
 
 # 3) identity comes back WITH the repo (.agents/config is committed) — verify:

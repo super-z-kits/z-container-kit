@@ -96,7 +96,7 @@ install.)
 **3. Restore if there is anything to restore** (skip on a brand-new repo):
 ```bash
 git -C /home/z/my-project fetch origin
-git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK — are these YOUR commits?
+git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g'   # SANITY CHECK — are these YOUR commits?
 git -C /home/z/my-project reset --hard origin/main     # brings code + .agents/config + worklog back (empty remote? skip)
 tail -80 /home/z/my-project/worklog.md                 # prior-session context (use tail/offset — the file can be 30+ KB)
 ```
@@ -276,9 +276,9 @@ enough in an emergency (kit absent, scripts broken — never stop your real
 job to repair tooling):
 
 ```bash
-git add -A && git commit -m "checkpoint" && git push    # the cross-chat layer
+git add -A && git commit -m "checkpoint" && git push origin HEAD:main    # the cross-chat layer (explicit refspec: no upstream is set in a fresh workspace)
 tar -C /home/z/my-project --exclude=node_modules --exclude=.next \
-    -cf /home/sync/repo.tar .                           # the force-kill layer
+    -cf /home/sync/repo.tar .                                           # the force-kill layer
 ```
 
 **Concurrency:** zsave takes a per-container lock (`/tmp/.zsave.lock`) — a

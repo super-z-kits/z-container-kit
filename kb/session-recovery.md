@@ -32,7 +32,7 @@
 
 ```
 git -C /home/z/my-project fetch origin                                   # fetch first (DO NOT reset yet)
-git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK (F18)
+git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g'   # SANITY CHECK (F18)
 git -C /home/z/my-project reset --hard origin/main   # your commits? proceed. Empty/new remote? skip. WRONG repo? STOP.
 source /home/z/my-project/.agents/config && echo "$ZK_PREFIX"           # identity came back with the repo
 tail -80 /home/z/my-project/worklog.md                                   # prior-session context

@@ -49,7 +49,7 @@ echo "hostname: $(hostname)"
 for m in "$SYNC" /tmp/my-project "$PROJ/upload"; do
   # scratch mode: $PROJ/upload is a live-project concept — skip the noise
   case "$m" in "$PROJ/upload") [ "$LIVE" = 1 ] || continue ;; esac
-  P=".${PREFIX}-rw-$$"
+  P=".zk${PREFIX:+-$PREFIX}-rw-$$"
   if [ -d "$m" ] && touch "$m/$P" 2>/dev/null; then
     rm -f "$m/$P"; echo "$m: writable"
   else
@@ -192,9 +192,11 @@ else
 fi
 if [ -n "$PREFIX" ]; then
   echo "project config: $PROJ/.agents/config (ZK_PREFIX=$PREFIX)"
+elif [ -f "$USK/zk-default.env" ]; then
+  echo "project config: MISSING — account default set: bash $SCRIPT_DIR/zk-init --default   (applies it; single-project accounts)"
+  echo "  this chat names a DIFFERENT project? init it explicitly: bash $SCRIPT_DIR/zk-init <name>  (the default must not be applied)"
 else
   echo "project config: MISSING — initialize: bash $SCRIPT_DIR/zk-init <name>"
-  [ -f "$USK/zk-default.env" ] && echo "  account default set: bash $SCRIPT_DIR/zk-init --default   (discovers + wires it)"
 fi
 # account default (read-only report — the opt-in single-project binding)
 if [ -f "$USK/zk-default.env" ]; then
@@ -243,9 +245,10 @@ if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origi
     DP="$(sed -n 's/^ZK_DEFAULT_PREFIX=//p' "$USK/zk-default.env" 2>/dev/null | head -1 | tr -d "\"'" || true)"
     DR="$(sed -n 's/^ZK_DEFAULT_REMOTE=//p' "$USK/zk-default.env" 2>/dev/null | head -1 | tr -d '"' || true)"
     echo "  1. account default SET (prefix=${DP:-?}): bash ${KITSRC:-/tmp/my-project/kit}/scripts/zk-init --default"
+    echo "     USE IT unless this chat names a DIFFERENT project (then wire that one"
+    echo "     explicitly instead — the default binds every chat to ONE repo)."
     echo "     (writes config + wires origin + fetches + REVEALS which project came back —"
-    echo "      single-project accounts only; if the revealed commits are the WRONG"
-    echo "      project, this is a multi-repo account: undo and state your project)"
+    echo "      if the revealed commits are the WRONG project, undo and state your project)"
     echo "     remote (masked): $(printf '%s' "$DR" | mask)"
   else
     echo "  1. no account default — wire the remote for THIS chat's project:"
@@ -253,7 +256,7 @@ if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origi
     echo "     (no PAT? Doppler vault may hold GH_PAT — secrets-vault-kit 'Path C'; else ask the user)"
   fi
   echo "  2. git -C $PROJ fetch origin   # empty dir? git -C $PROJ init -b main first"
-  echo "     git -C $PROJ log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK before reset (F18)"
+  echo "     git -C $PROJ log origin/main --oneline -5 | sed -E 's#(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+#\1***#g'   # SANITY CHECK before reset (F18)"
   echo "     git -C $PROJ reset --hard origin/main   # empty remote? skip"
   echo "  3. project identity comes back WITH the repo (.agents/config is committed):"
   echo "     source $PROJ/.agents/config && echo \$ZK_PREFIX   # verify — if absent (NEW project, not a recovery):"
@@ -268,13 +271,17 @@ if [ ! -e "$PROJ/.git" ]; then
 fi
 if [ "$COLD" != 1 ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
   if [ -f "$USK/zk-default.env" ]; then
-    rec "add remote from the account default: bash $SCRIPT_DIR/zk-init --default  (wires origin + reveals the project)"
+    rec "add remote from the account default: bash $SCRIPT_DIR/zk-init --default  (wires origin + reveals the project — SKIP it if this chat names a different project; wire that one instead)"
   else
     rec "add remote: git -C $PROJ remote add origin https://<PAT>@github.com/<user>/<repo>.git (github = only cross-chat persistence)"
   fi
 fi
 if [ -z "$PREFIX" ] && [ "$COLD" != 1 ]; then
-  rec "no project identity — initialize: bash $SCRIPT_DIR/zk-init <name>  (NEW project; in a RECOVERY the name returns with the repo — never invent one)"
+  if [ -f "$USK/zk-default.env" ]; then
+    rec "no project identity — account default set: bash $SCRIPT_DIR/zk-init --default  (UNLESS this chat names a different project: then bash $SCRIPT_DIR/zk-init <name> + wire its remote)"
+  else
+    rec "no project identity — initialize: bash $SCRIPT_DIR/zk-init <name>  (NEW project; in a RECOVERY the name returns with the repo — never invent one)"
+  fi
 fi
 if [ -n "$(git -C "$PROJ" status --porcelain 2>/dev/null)" ]; then
   rec "dirty tree — checkpoint: bash $SCRIPT_DIR/zsave 'session-start checkpoint' (commits ALL current state incl. .env)"

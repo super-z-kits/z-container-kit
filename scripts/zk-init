@@ -82,7 +82,9 @@ read_default() {
   [ -f "$DEFAULT" ] || return 1
   DEF_PREFIX="$(sed -n 's/^ZK_DEFAULT_PREFIX=//p' "$DEFAULT" 2>/dev/null | head -1 | tr -d "\"'" | tr -d '[:space:]')"
   DEF_REMOTE="$(sed -n 's/^ZK_DEFAULT_REMOTE=//p' "$DEFAULT" 2>/dev/null | head -1 | tr -d "\"" | sed 's/[[:space:]]*$//')"
-  [ -n "$DEF_REMOTE" ] || return 1
+  # BOTH keys required — a prefix-less or remote-less default is malformed and
+  # must fail loudly, never half-apply
+  [ -n "$DEF_PREFIX" ] && [ -n "$DEF_REMOTE" ] || return 1
   return 0
 }
 
@@ -106,9 +108,15 @@ write_config() {  # $1 = prefix, $2 = 0|1 force
     echo "  keep it as-is, or re-init deliberately: bash $SCRIPT_DIR/zk-init $1 --force" >&2
     exit 1
   fi
-  mkdir -p "$AGENTS"
-  printf 'ZK_PREFIX=%s\n' "$1" > "$CFG"
+  mkdir -p "$AGENTS" || { echo "zk-init: cannot create $AGENTS" >&2; exit 1; }
+  if ! printf 'ZK_PREFIX=%s\n' "$1" > "$CFG" 2>/dev/null; then
+    echo "zk-init: FAILED to write $CFG (permissions? disk?)" >&2
+    exit 1
+  fi
   chmod 0644 "$CFG"   # committed, non-secret (a project name only)
+  # verify: read back (a failed write must never report success)
+  [ "$(sed -n 's/^ZK_PREFIX=//p' "$CFG" 2>/dev/null | head -1)" = "$1" ] \
+    || { echo "zk-init: write of $CFG did not persist (read-back mismatch)" >&2; exit 1; }
   echo "[ok] wrote $CFG (ZK_PREFIX=$1)"
 }
 
@@ -171,8 +179,10 @@ if [ "$SET_DEFAULT" = 1 ]; then
   fi
   # single fixed filename + atomic tmp+mv + 0600: zero-collision by construction
   # (two racing set-defaults are both user-directed acts; last write wins whole)
+  # umask 077: the PAT-bearing tmp file is NEVER world-readable, not even in the
+  # window before chmod (a bare redirect creates 0644 under the default umask)
   T="$DEFAULT.tmp.$$"
-  if ! printf 'ZK_DEFAULT_PREFIX=%s\nZK_DEFAULT_REMOTE=%s\n' "$CUR" "$URL" > "$T" 2>/dev/null; then
+  if ! ( umask 077 && printf 'ZK_DEFAULT_PREFIX=%s\nZK_DEFAULT_REMOTE=%s\n' "$CUR" "$URL" > "$T" ) 2>/dev/null; then
     echo "zk-init --set-default: cannot write $T ($USK writable?)" >&2
     rm -f "$T" 2>/dev/null
     exit 1

@@ -42,7 +42,7 @@
 #
 # Zero-script equivalent (scripts are accelerators, never requirements —
 # good-enough emergency version, see SKILL.md "Saving work"):
-#   git add -A && git commit -m "checkpoint" && git push
+#   git add -A && git commit -m "checkpoint" && git push origin HEAD:main
 #   tar -C "$PROJ" --exclude=node_modules --exclude=.next -cf /home/sync/repo.tar .
 set -uo pipefail
 # Resolve ZK_PREFIX — location-agnostic (kit v4.1 zero-install): identity
@@ -152,9 +152,9 @@ ZS_MSG="${1:-}"
 if [ -n "$(git status --porcelain)" ]; then
   git add -A
   # m5: scan staged files for secret-sounding basenames — EXCLUDING kit-owned
-  # paths (.agents/, skills/, kit kb modules like secrets-audits.md are
+  # paths (.agents/, skills/, kit trees incl. their kb/ modules are
   # known-good docs, and warning on every first kit commit is noise)
-  SECRET_HITS="$(git diff --cached --name-only --diff-filter=A 2>/dev/null | grep -vE '^(\.agents|skills|z-container-kit)/' | grep -iE '(^|/)(secret|token|key|credential|\.env)' || true)"
+  SECRET_HITS="$(git diff --cached --name-only --diff-filter=A 2>/dev/null | grep -vE '^(\.agents|skills|z-container-kit|kb)/' | grep -iE '(^|/)(secret|token|key|credential|\.env)' || true)"
   if [ -n "$SECRET_HITS" ]; then
     echo "[warn] m5: staging files whose basename matches secret-sounding pattern:" >&2
     printf '%s\n' "$SECRET_HITS" | sed 's/^/         /' >&2
@@ -206,6 +206,7 @@ elif git remote get-url origin >/dev/null 2>&1; then
           echo "[ok] pushed origin/$(printf '%s' "$BR" | mask) (auto-rebase merged the parallel session's commits — nothing lost)"
         else
           echo "[warn] rebase succeeded but the re-push failed: $(printf '%s\n' "$out2" | mask)" >&2
+          AUTO=-1   # rejection branch handled: suppress the generic stale-rejection warn below
         fi
       else
         echo "[warn] auto-rebase did not complete (same-line conflict, missing git identity, or network):" >&2
@@ -219,6 +220,8 @@ elif git remote get-url origin >/dev/null 2>&1; then
     fi
     if [ "$AUTO" = 0 ]; then
       echo "[warn] push failed: $out" >&2
+    elif [ "$AUTO" = -1 ]; then
+      echo "[warn] (the auto-rebase above already ran — do NOT re-run it; address the re-push error above)" >&2
       echo "       hints: PAT expired/revoked (403)? rotate at github.com/settings/tokens" >&2
       echo "       diverged? -> git pull --rebase origin $(printf '%s' "$BR" | mask) && zsave" >&2
     fi
