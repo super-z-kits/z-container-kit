@@ -12,9 +12,27 @@ import stat
 import sys
 import urllib.request
 
-import os; PREFIX = os.environ.get("ZK_PREFIX")
+import os, sys, glob
+PREFIX = os.environ.get("ZK_PREFIX")
 if not PREFIX:
-    import sys; print("ZK_PREFIX not set — see SKILL.md First-time setup"); sys.exit(1)
+    # Auto-discover from /home/user_skills/*-config.env (like resolve-prefix.sh)
+    configs = glob.glob("/home/user_skills/*-config.env")
+    if len(configs) == 0:
+        print("ZK_PREFIX not configured — no /home/user_skills/*-config.env found")
+        print("See SKILL.md First-time setup")
+        sys.exit(1)
+    elif len(configs) > 1:
+        print(f"Multiple project configs found: {configs}")
+        sys.exit(1)
+    else:
+        with open(configs[0]) as f:
+            for line in f:
+                if line.startswith("ZK_PREFIX="):
+                    PREFIX = line.strip().split("=", 1)[1]
+                    break
+        if not PREFIX:
+            print(f"ZK_PREFIX not set in {configs[0]}")
+            sys.exit(1)
 ENV_FILE = f"/home/user_skills/{PREFIX}-doppler.env"
 OUT_JSON = "/tmp/my-project/doppler-secrets.json"
 API = "https://api.doppler.com/v3"
