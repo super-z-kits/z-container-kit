@@ -1,26 +1,33 @@
-# Fresh-chat bootstrap (detail)
+# Session recovery (fresh chat) — detail
 
-Paths A/B, credential-file shortcut, branch-rename, env-override testing.
-Extracted from SKILL.md v2.3.3.
-Fresh-chat bootstrap. The container boots as a bare platform template —
+> SCOPE: this module is about **new sessions** (the 100% case — every time an
+> agent loads this skill in a new chat and the workspace needs recovery). The
+> inline MUST-READ section of SKILL.md carries the short version; this module
+> is the deep dive. For instantiating the kit into a **new repo/project**
+> (the rare case), see `kb/new-project.md` — different scenario, different flow.
+
+Paths A/B/C, credential-file shortcut, branch-rename, env-override testing.
+Extracted from SKILL.md v2.3.3, reworked for the v3.1 `.agents/` layout.
+Fresh-chat recovery. The container boots as a bare platform template —
 `git init`'d, single "Initial commit", no remote, kit helpers absent from
-`scripts/` (if the `/home/user_skills` copy survived,
+`scripts/` and `.agents/` (if the `/home/user_skills` package survived,
 `bash /home/user_skills/z-container-kit/scripts/zsession` works pre-recovery
-and prints this same sequence). Two paths:
+and prints this same sequence). Two-and-a-half paths:
 
 **A. Nothing survived** (true cold start — you have a PAT and the kit repo
-URL, nothing else; `/home/user_skills` empty):
+URL, nothing else; `/home/user_skills` empty). Wire the remote BEFORE the
+kit install so the installer can derive ZK_PREFIX from the origin URL
+(nothing else exists to derive it from):
 
 ```
 git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit   # any scratch path works
-bash /tmp/my-project/kit/scripts/install.sh    # helpers + kit copies everywhere
 git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git   # the repo backing THIS workspace
 git -C /home/z/my-project fetch origin                                   # fetch first (DO NOT reset --hard yet)
 # F18 (audit): verify the remote is the one you expect BEFORE destructive reset.
 git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK the commits
 # if the commits match your expectation, proceed; if they look like the WRONG repo's history, STOP and ask the user
 git -C /home/z/my-project reset --hard origin/main   # restore the workspace (empty remote? skip)
-bash /tmp/my-project/kit/scripts/install.sh    # normalize all copies post-restore (install strips any clone .git — copies stay plain dirs)
+bash /tmp/my-project/kit/scripts/install.sh    # instantiate .agents/ + shims (derives ZK_PREFIX from the origin URL; installs strips any clone .git)
 bash /home/z/my-project/scripts/zsave "fresh-chat bootstrap checkpoint"
 ```
 
@@ -31,12 +38,13 @@ needs no PAT — the kit repo is public.
 
 **B. Something survived** (credential file or kit copy in `/home/user_skills`):
 recover the remote — every successful `zsave` writes a `${ZK_PREFIX}-remote.url`
-credential file to `/home/sync/` and `/home/user_skills/` (holds the origin
-URL with embedded PAT — never print its contents; verify remotes with
-`git remote` — NAMES ONLY — since `git remote -v` prints the PAT into the
-transcript). If one survived, **first run `zsession`** — it now prints the
-credential file's masked URL (audit F17) so you can sanity-check it BEFORE
-recovery. Then:
+credential file to `/home/user_skills/` (v3.1: only there; the pre-v3.1
+`/home/sync/` copy is removed by install.sh — ossfs ignores chmod and left it
+world-readable at 0777). It holds the origin URL with embedded PAT — never
+print its contents; verify remotes with `git remote` — NAMES ONLY — since
+`git remote -v` prints the PAT into the transcript. If one survived, **first
+run `zsession`** — it prints the credential file's masked URL (audit F17) so
+you can sanity-check it BEFORE recovery. Then:
 `git remote add origin "$(cat /home/user_skills/${ZK_PREFIX}-remote.url)"`.
 **Before `git reset --hard`**: `git fetch && git log origin/main --oneline -5`
 to verify the commits are the ones you expect — a stale credential file (audit
@@ -50,14 +58,26 @@ container — ask the user for it (or a fresh token), then
 (no repo name is hardcoded in this guide — it travels across projects; the
 credential file, when present, already names the right one). Then
 `git fetch && git reset --hard origin/main` and reinstall the kit —
-`bash z-container-kit/scripts/install.sh`. The reinstall is
-LOAD-BEARING: `skills/` is git-ignored, so only install.sh restores
-`skills/z-container`. (`git clone` into my-project fails — the boot template
-is not empty.)
+`bash /home/user_skills/z-container-kit/scripts/install.sh`. The reinstall is
+LOAD-BEARING: `skills/` is kept out of git (install.sh maintains
+`/skills/` in `.git/info/exclude`), so only install.sh restores
+`skills/z-container` (and normalizes `scripts/` shims + `.agents/`).
+(`git clone` into my-project fails — the boot template is not empty.)
+
+**C. No PAT pasted, but the Doppler vault has GH_PAT** (vault-sourced
+bootstrap — see secrets-vault-kit "Vault-sourced GitHub bootstrap"): fetch
+GH_PAT from the vault via the M7 staging pattern, then use it in the
+remote-add step of path A/B exactly as a pasted PAT. The Doppler project
+name `agent-bootstrap` in the handover is the hint that this is the intended
+flow.
 
 Notes:
 - If your repo's default branch is not `main` (e.g. `master`), rename it once:
   `git branch -m master main && git push origin HEAD:main` — the watchdog's
   `git switch main` fails every toolcall when no `main` exists.
+- Worklog: after `reset --hard origin/main` the committed `worklog.md`
+  re-appears — read its TAIL (`tail -80`) for prior-session context. If it is
+  missing, recover it from git history (`git log --all --oneline -- worklog.md`
+  then `git show <commit>:worklog.md > worklog.md`) instead of starting blank.
 - The helpers honor env overrides for safe scratch testing (never touches the
-  real `/home/sync`): see "Testing the helpers safely" near the end.
+  real `/home/sync`): see "Testing the helpers safely" in SKILL.md.

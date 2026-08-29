@@ -348,3 +348,21 @@ longer ambiguous), a PAT-typed-once note (the remote-add is the single
  sanctioned echo; helpers mask everything after), and the zsave nested-repo
 warning now spells out the consequence (new files inside stay untracked).
 Supersedes the two inline v1 documents.
+
+**v3.x (2026-08-29):** the kit is now INSTANTIATED into the workspace repo at
+`.agents/` (git-tracked; `.agents/config` carries ZK_PREFIX and survives boot
+because the platform only rewrites `.env`). v3.0 was a destructive rewrite
+(context compaction before the writes erased 55% of SKILL.md, shipped a
+Python syntax error, and reverted v2.7.5 features) — reverted to v2.7.5 and
+rebuilt non-destructively as v3.1: scripted surgical section ops on the full
+v2.7.5 text + a mechanical content-preservation audit (every v2.7.5 line
+verbatim or in a reviewed allowlist) + syntax gates + 39 scratch functional
+tests + live dogfood + two fresh-context sub-agent usability rounds (13 +
+7 findings, all fixed: skills/ exclusion via .git/info/exclude, the
+new-project ZK_PREFIX trap warning + escape hatch, missing kb modules
+shipped — sub-agents.md, terminal-lockout.md —, cold-start reordered to
+remote-before-install so the installer can derive the prefix, /home/sync
+credential-copy write eliminated (mode-0777 PAT leak), kit masker extended
+to dp.pt/dp.st/cfat/sbp, ZK_USK scratch override). The 4-copy kit sprawl
+is now 2 copies: the instantiated .agents/ and the read-only
+/home/user_skills package.

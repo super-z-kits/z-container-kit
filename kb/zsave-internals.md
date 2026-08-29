@@ -19,8 +19,11 @@ if commit/snapshot/repo.tar fail — a push failure is a warning):
 2. `git add -A` + commit (yes, including `.env` — law 9). A clean tree means
    no commit — your message argument is not used (noted in the output);
 3. `git push origin HEAD:<current-branch>` if an origin remote exists — on
-   success it also refreshes the `${ZK_PREFIX}-remote.url` credential files
-   (`/home/sync/`, `/home/user_skills/`) for fresh-chat remote recovery; push
+   success it also refreshes the `${ZK_PREFIX}-remote.url` credential file
+   (`/home/user_skills/` only, mode 0600 — v3.1: the `/home/sync/` copy is no
+   longer written; ossfs ignores chmod and left it world-readable at 0777,
+   friction #9/#19; install.sh removes stale copies) for fresh-chat remote
+   recovery; push
    stderr is echoed with embedded PATs masked;
 4. tar snapshot to `/home/sync/${ZK_PREFIX}-snapshots/proj-<ts>.tar` (keep last 5).
    Excluded: `node_modules/`, `.next/`, `.turbo/` at ANY depth, `upload/`,
