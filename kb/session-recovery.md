@@ -89,4 +89,5 @@ Notes:
   missing, recover it from git history (`git log --all --oneline -- worklog.md`
   then `git show <commit>:worklog.md > worklog.md`) instead of starting blank.
 - The helpers honor env overrides for safe scratch testing (never touches the
-  real `/home/sync`): see "Testing the helpers safely" in SKILL.md.
+  real `/home/sync`): see `kb/testing-helpers.md` and the "Pointing helpers at
+  another project (overrides)" section of SKILL.md.

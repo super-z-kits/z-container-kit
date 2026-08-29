@@ -175,9 +175,12 @@ That is exactly why v5 makes it **static**:
 - **Sessions never write `/home/user_skills` except the sanctioned list below.**
   Steady-state saves touch it ZERO times. Nothing races because nothing writes.
 - **The three sanctioned writes** (each zero-collision by construction):
-  1. kit install/refresh — `refresh.sh`, a conscious account-level operation,
-     atomic copy-then-swap (a concurrent session at worst runs the old kit for
-     one command);
+  1. kit install/refresh — `refresh.sh`, a conscious account-level operation:
+     per-run staging + rename-aside swap (two atomic directory renames — a
+     concurrent session never sees a torn kit; worst case one racing command
+     errors once and works on re-run). refresh.sh also owns account-level
+     housekeeping (stale-artifact cleanup + the backup-dir prune folded in
+     from the deleted zcleanup-backups script);
   2. the portable kit zip rebuild — only when missing, same bytes from a
      static source, atomic swap (platform glue: sub-agent spawn consumes it);
   3. credential files (`${ZK_PREFIX}-remote.url`, `${ZK_PREFIX}-doppler.env`) —
@@ -222,7 +225,10 @@ Consequences:
 Recovery: "files vanished" → `git -C /home/z/my-project switch <branch>` brings
 them back from the ref (commits are safe). Then `zsave`. Advanced patterns (dirty
 shield semantics, gitdir relocation, worktree orphan recovery, force-move refs):
-`kb/watchdog-advanced.md`.
+`kb/watchdog-advanced.md`. Mid-rebase note: while a `git rebase` is in progress
+(e.g. zsave's auto-rebase hit a conflict), the prelude's `git switch main` FAILS
+harmlessly (`cannot switch branch while rebasing`) — the watchdog cannot destroy
+an in-progress rebase; resolve, `git rebase --continue`, and save again.
 
 ## Saving work — zsave
 
@@ -433,9 +439,10 @@ to repair tooling.
   kit & config status for THIS project)
 - `zk-init <name>` — project setup: writes `.agents/config` (`--force` to fix a
   wrong prefix; `--migrate-v3` to strip a v3 kit tree; `--status` to inspect)
-- `refresh.sh` — account-level upgrade: atomic copy-then-swap of the canonical
-  package + zip rebuild, from an updated kit clone (a sanctioned user_skills
-  writer — sessions never run it casually)
+- `refresh.sh` — account-level upgrade: rename-aside swap of the canonical
+  package + zip rebuild + account housekeeping (backup-dir prune — the old
+  zcleanup-backups was folded into it), from an updated kit clone (THE
+  sanctioned account-level user_skills writer — sessions never run it casually)
 - `zremote` — PAT-masking `git remote` viewer (replaces `git remote -v`)
 - `zdoppler-smoke` — one-shot Doppler vault verification
 - `zkit-selftest` — end-to-end save/wipe/recover smoke test
@@ -444,7 +451,9 @@ to repair tooling.
   sandboxes, scratch tests — one mechanism, see `kb/testing-helpers.md`).
   zsave prints its resolved target (`proj=… prefix=…`) on the first output
   line — glance at it before trusting a save.
-- `zcleanup-backups` — prune old `.pre-update-backup-*` / `.pre-export-*` dirs from `/home/user_skills/` (OF-14: keeps last 2 per skill by default; `zcleanup-backups 5` to keep more, `0` to delete all)
+- (Removed in v5: `install.sh` — v3's installer; `zcleanup-backups` — its
+  backup-dir prune folded into `refresh.sh`, the one account-level maintenance
+  op. Nothing a session does needs either.)
 
 **Python (run from the canonical kit — `python3 /home/user_skills/z-container-kit/scripts/<name>`):**
 - `daemonize.py` — double-fork background process that survives toolcalls
@@ -571,10 +580,11 @@ own business, and user-skills is static.**
   cross-contamination happened. Missing config = loud one-command fix
   (`zk-init <name>`); wrong silent guess = data loss. Fix a wrong prefix
   with `zk-init <name> --force`. Detail and edge cases: `kb/new-project.md`.
-- **Upgrades are account-level and atomic.** `refresh.sh` copy-then-swaps the
-  canonical package (a concurrent session never sees a half-written kit) and
-  rebuilds the portable zip. All projects move together — one version, zero
-  stale copies. Rollback = check out an older kit tag and refresh again.
+- **Upgrades are account-level and atomic.** `refresh.sh` swaps the canonical
+  package via per-run staging + rename-aside (a concurrent session never sees
+  a torn kit; worst case one racing command errors once and works on re-run)
+  and rebuilds the portable zip. All projects move together — one version,
+  zero stale copies. Rollback = check out an older kit tag and refresh again.
 - **The platform consumes `/home/user_skills/*.zip` at sub-agent spawn**
   (observed live). Each kit owns its zip: zsave/refresh.sh rebuild the
   z-container zip when they find it missing, so sub-agent delivery survives

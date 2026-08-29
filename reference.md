@@ -230,12 +230,15 @@ unknown; ossfs df shows 16E (unlimited-looking) — actual bucket quota unknown.
   overwrites (the wrong-prefix fix); --migrate-v3 strips a v3-era kit tree
   (.agents/SKILL.md, scripts/ shims, skills/z-container symlink) keeping the
   config; --status inspects. Sets the safe.directory git-config entry.
-- `refresh.sh` (v4, replaces install.sh's account role): atomic
-  copy-then-swap of the canonical /home/user_skills/z-container-kit package
-  from a kit clone (strips .git/__pycache__/config; 0644 normalization;
-  version reporting), rebuilds the portable zip, removes stale pre-v3.1
-  /home/sync/*-remote.url copies. Never touches any project. A sanctioned
-  user_skills writer (the static rule's write #1).
+- `refresh.sh` (v4, replaces install.sh's account role; v5: rename-aside
+  swap): per-run staging (`$$`) + two atomic directory renames swap the
+  canonical /home/user_skills/z-container-kit package from a kit clone
+  (strips .git/__pycache__/config; 0644 normalization; version reporting;
+  concurrent refreshes never swap a half-copied tree), rebuilds the portable
+  zip, removes stale pre-v3.1 /home/sync/*-remote.url copies, and prunes old
+  `.pre-*` backup dirs (keep newest 2 per skill — the zcleanup-backups prune,
+  folded in v5; that script is deleted). Never touches any project. THE
+  sanctioned user_skills writer (the static rule's write #1).
 - `install.sh`: REMOVED (v4 stub deleted in v5 — zk-init + refresh.sh fully
   replaced it).
 
@@ -496,6 +499,21 @@ serialization, cred write-only-on-change + atomicity, same-repo
 auto-rebase round-trip, static-guard greps, script-count guard) + syntax
 gates + fresh-context sub-agent rounds (daily save under lock contention,
 same-repo multi-track, adversarial static audit) + design peer review.
+Review round (adversarial-reviewer-1, SHIP_WITH_FIXES 2H/5M/9L — all applied):
+H-1 zcleanup-backups was a FOURTH unsanctioned user_skills writer — deleted,
+its backup-dir prune (keep newest 2 per skill, OF-14) folded into refresh.sh,
+the one conscious account-level maintenance op; H-2 refresh's shared staging
+name + rm-before-mv could swap a torn kit under concurrent refreshes — now
+per-run `$$` staging + rename-aside swap (two atomic renames; documented
+worst case: one racing command errors once); M-1 svk's heredoc recipe broke
+verbatim copy-paste (indented EOF, reproduced live) — replaced with an
+indent-immune printf recipe; M-2 zdoppler-smoke's fallback hint no longer
+teaches a bare `cat >` write; M-3 svk README refresh recipe now rename-aside;
+M-4 zsave-internals empty-commit note; M-5 watchdog-vs-mid-rebase interaction
+documented (git switch main fails harmlessly during rebase — verified live);
+L-1/L-2/L-3/L-4/L-5 polish (zsession probe-write wording + $USK instead of
+hardcoded paths + scan-era CFS loop removed, zsave conflict message wording,
+stale section pointer, stale line counts).
 
 **v4.0.0 (2026-08-29, zero-install redesign):** the multi-kit / multi-repo
 round. Owner review: the kit "was designed in a naive, center of the world,

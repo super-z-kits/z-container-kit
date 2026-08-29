@@ -199,10 +199,13 @@ elif git remote get-url origin >/dev/null 2>&1; then
           echo "[warn] rebase succeeded but the re-push failed: $(printf '%s\n' "$out2" | mask)" >&2
         fi
       else
-        echo "[warn] auto-rebase hit a conflict (both sessions changed the same lines):" >&2
+        echo "[warn] auto-rebase did not complete (same-line conflict, missing git identity, or network):" >&2
         printf '%s\n' "$rb" | mask | sed 's/^/       /' >&2
-        echo "       fix by hand: resolve the conflicts, git add -A && git rebase --continue, then zsave again" >&2
+        echo "       if it is a conflict: resolve the marked files, git add -A && git rebase --continue, then zsave again" >&2
         echo "       (or git rebase --abort to keep your local commits un-pushed and think first)" >&2
+        echo "       note: the snapshot steps below capture the tree AS-IS (conflict markers included) —" >&2
+        echo "       resolve before the next zsave for a clean snapshot. The watchdog's 'git switch main'" >&2
+        echo "       fails harmlessly while a rebase is in progress — it cannot destroy the rebase state." >&2
       fi
     fi
     if [ "$AUTO" = 0 ]; then

@@ -18,8 +18,12 @@ it ZERO times. The only sanctioned writes, each zero-collision by
 construction:
 
 1. **Kit install/refresh** (`refresh.sh`) — a conscious account-level
-   operation, atomic copy-then-swap. Concurrent refresh + read worst case: a
-   session runs the previous kit version for one command. Never a torn kit.
+   operation: per-run staging + rename-aside swap (two atomic directory
+   renames). Concurrent refresh + read worst case: one racing command errors
+   once and works on re-run — never a torn kit. refresh.sh also owns the
+   account-level housekeeping (stale-artifact cleanup, backup-dir prune).
+   The old zcleanup-backups script was a FOURTH unsanctioned writer and was
+   deleted (its prune folded into refresh.sh).
 2. **Portable kit zip rebuild** — only when the platform consumed it, same
    bytes from a static source, atomic tmp+mv. Concurrent rebuilds are
    harmless (both produce identical bytes).

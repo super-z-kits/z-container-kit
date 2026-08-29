@@ -23,7 +23,8 @@ if commit/snapshot/repo.tar fail — a push failure is a warning):
    are auto-excluded too — they would otherwise land as broken gitlink
    entries (already-tracked ones are reported with the fix command);
 2. `git add -A` + commit (yes, including `.env` — law 9). A clean tree means
-   no commit — your message argument is not used (noted in the output);
+   no content commit — if you passed a message, an EMPTY checkpoint commit
+   records it instead (F19) so the message is never silently discarded;
 3. `git push origin HEAD:<current-branch>` if an origin remote exists. A
    REJECTED push (non-fast-forward — a parallel session on the same repo
    pushed first) auto-recovers once: `git pull --rebase origin <branch>` +
