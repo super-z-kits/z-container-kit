@@ -28,7 +28,13 @@ if [ -f "$SCRIPT_DIR/../config" ]; then
 fi
 if [ -z "$PREFIX" ]; then
   # shellcheck disable=SC1091
-  source "$SCRIPT_DIR/resolve-prefix.sh" 2>/dev/null || { echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1; }
+  if [ -f "$SCRIPT_DIR/resolve-prefix.sh" ]; then
+    # hints go to stderr ON PURPOSE — do not swallow them (PR#2 review F1)
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/resolve-prefix.sh" || { echo "$0: ZK_PREFIX not resolvable — see the hints above" >&2; exit 1; }
+  else
+    echo "resolve-prefix.sh not found — run install.sh first" >&2; exit 1
+  fi
 fi
 
 ENV_FILE="${ZK_DOPPLER_ENV:-/home/user_skills/${PREFIX}-doppler.env}"
