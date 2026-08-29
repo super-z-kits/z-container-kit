@@ -50,6 +50,7 @@ if [ -d "$USK" ]; then
     rm -f "$PKG.incoming/config"
     # normalize modes (avoids mode-only git dirt in repos that track a copy)
     find "$PKG.incoming" -type f -exec chmod 0644 {} + 2>/dev/null
+    rm -rf "$PKG"   # mv onto an existing dir would nest INSIDE it — remove first
     if mv -f "$PKG.incoming" "$PKG" 2>/dev/null; then
       echo "[ok] canonical package -> $PKG (v$(kit_v "$PKG"))"
     else
