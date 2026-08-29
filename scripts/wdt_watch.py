@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Z-container HEAD-watchdog observer (forensic). (kit v3.1.6)
+"""Z-container HEAD-watchdog observer (forensic). (kit v4.0.0)
 
 Double-forked daemon watching /home/z/my-project/.git/HEAD:
 - inotify (ctypes) on the .git dir for HEAD*/HEAD.lock events -> write-mechanism forensics

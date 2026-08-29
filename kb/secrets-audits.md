@@ -8,7 +8,7 @@ Extracted from SKILL.md v2.3.3.
   writes `${ZK_PREFIX}-remote.url` to `/home/sync/` at all (friction #9/#19);
   the only copy is the mode-0600 one in
   `/home/user_skills/${ZK_PREFIX}-remote.url` (PolarFS honors chmod), and
-  install.sh removes stale pre-v3.1 `/home/sync/` copies as a one-shot
+  refresh.sh removes stale pre-v3.1 `/home/sync/` copies as a one-shot
   migration. The 0777 quirk itself remains for any OTHER file you choose to
   put on `/home/sync/` — treat that mount as world-readable-by-accident and
   keep secrets off it. `zsave` prints the file mode in its

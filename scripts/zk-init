@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# zk-init — project-level kit initialization (kit v4.0)
+#
+# The kit is ZERO-INSTALL: it lives once per ACCOUNT at
+# /home/user_skills/z-container-kit/ (canonical, refreshed by refresh.sh).
+# The ONLY per-project artifact is a one-line config file — the project's
+# "zk env", exactly like .env but boot-safe (the platform rewrites .env
+# every boot; it never touches .agents/config):
+#
+#   $PROJ/.agents/config   ->   ZK_PREFIX=<project-name>
+#
+# That file names this project's credential/snapshot/state artifacts
+# ($USK/<prefix>-remote.url, <prefix>-doppler.env, $SYNC/<prefix>-snapshots/,
+# <prefix>-state.env), is git-tracked, travels with the repo through GitHub
+# and repo.tar, and comes back on `git reset --hard origin/main` — which is
+# why v4 cold starts need no install step at all.
+#
+# Usage:
+#   zk-init <prefix>            # write the config (refuses to overwrite)
+#   zk-init <prefix> --force    # overwrite (the wrong-prefix fix)
+#   zk-init --migrate-v3        # strip a v3.x kit tree (.agents/SKILL.md,
+#                                # scripts/, kb/, evidence/, shims, symlink),
+#                                # KEEP .agents/config — then zsave
+#   zk-init --status            # show config, v3 leftovers, canonical kit
+#
+# env: ZK_PROJ (default /home/z/my-project), ZK_USK (scratch tests)
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+PROJ="${ZK_PROJ:-/home/z/my-project}"
+USK="${ZK_USK:-/home/user_skills}"
+SYNC="${ZK_SYNC:-/home/sync}"
+AGENTS="$PROJ/.agents"
+CFG="$AGENTS/config"
+
+usage() {
+  cat <<'EOF'
+zk-init — project-level kit initialization (kit v4.0, zero-install)
+
+The kit lives once per ACCOUNT at /home/user_skills/z-container-kit/.
+The ONLY per-project artifact is a one-line config — the project's "zk env",
+like .env but boot-safe (the platform rewrites .env every boot; it never
+touches .agents/config):
+
+  $PROJ/.agents/config   ->   ZK_PREFIX=<project-name>
+
+Usage:
+  zk-init <prefix>            # write the config (refuses to overwrite)
+  zk-init <prefix> --force    # overwrite (the wrong-prefix fix)
+  zk-init --migrate-v3        # strip a v3.x kit tree, KEEP .agents/config
+  zk-init --status            # show config, v3 leftovers, canonical kit
+
+env: ZK_PROJ (default /home/z/my-project), ZK_USK, ZK_SYNC (scratch tests)
+EOF
+  exit "${1:-0}"
+}
+
+cur_prefix() {
+  sed -n 's/^ZK_PREFIX=//p' "$CFG" 2>/dev/null | head -1 | tr -d "\"'"
+}
+
+validate() {
+  case "$1" in
+    ''|*[!a-z0-9-]*)
+      echo "zk-init: prefix '$1' must be lowercase [a-z0-9-], non-empty" >&2
+      exit 1
+      ;;
+  esac
+  if [ "${#1}" -gt 24 ]; then
+    echo "zk-init: prefix '$1' longer than 24 chars" >&2
+    exit 1
+  fi
+}
+
+STATUS=0; FORCE=0; MIGRATE=0; PREFIX_ARG=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --status)    STATUS=1 ;;
+    --force)     FORCE=1 ;;
+    --migrate-v3) MIGRATE=1 ;;
+    -h|--help)   usage 0 ;;
+    -*)          echo "zk-init: unknown arg: $1" >&2; usage 2 ;;
+    *)           PREFIX_ARG="$1" ;;
+  esac
+  shift
+done
+
+# Known v3-era helper filenames (scripts/ shims + real copies)
+V3_HELPERS="zsave zsession zdoppler-smoke zkit-selftest zcleanup-backups zremote install.sh resolve-prefix.sh daemonize.py doppler_fetch.py verify_access.py wdt_watch.py"
+
+# _is_kit_artifact <file> — conservative marker check: ONLY these count as
+# kit artifacts (a user file that merely MENTIONS the kit must survive):
+#   - v3 shim marker:      'shim -> .agents/scripts'
+#   - versioned headers:   '(kit v2' / '(kit v3' / '(kit v4'
+#   - the resolver:        defines _resolve_prefix (any era, never versioned)
+# Files with a known helper name but NO marker (e.g. doppler_fetch.py copies
+# that never carried a version header) are reported for manual review, never
+# auto-deleted (false negative = harmless dead file; false positive = user
+# data loss — we always err toward the former).
+_is_kit_artifact() {
+  head -10 "$1" 2>/dev/null | grep -q 'shim -> \.agents/scripts\|(kit v[234]\.\|_resolve_prefix'
+}
+
+# ---------------------------------------------------------------- --status ---
+if [ "$STATUS" = 1 ]; then
+  echo "zk-init status for $PROJ:"
+  if [ -f "$CFG" ]; then
+    echo "  config: $CFG (ZK_PREFIX=$(cur_prefix))"
+  else
+    echo "  config: MISSING — initialize with: bash $SCRIPT_DIR/zk-init <name>"
+  fi
+  V3LEFT=""; V3REVIEW=""
+  for p in SKILL.md reference.md README.md scripts kb evidence; do
+    [ -e "$AGENTS/$p" ] && V3LEFT="$V3LEFT .agents/$p"
+  done
+  for f in $V3_HELPERS; do
+    [ -e "$PROJ/scripts/$f" ] || continue
+    if _is_kit_artifact "$PROJ/scripts/$f"; then
+      V3LEFT="$V3LEFT scripts/$f"
+    else
+      V3REVIEW="$V3REVIEW scripts/$f"
+    fi
+  done
+  [ -e "$PROJ/skills/z-container" ] && V3LEFT="$V3LEFT skills/z-container"
+  if [ -n "$V3LEFT" ]; then
+    echo "  v3 kit leftovers (harmless — helpers no longer read them):$V3LEFT"
+    echo "    strip with: bash $SCRIPT_DIR/zk-init --migrate-v3  (then zsave)"
+  else
+    echo "  v3 kit leftovers: none"
+  fi
+  [ -n "$V3REVIEW" ] && echo "  possible kit leftovers, NO marker (review by hand; kept):$V3REVIEW"
+  if [ -f "$USK/z-container-kit/SKILL.md" ]; then
+    echo "  canonical kit: $USK/z-container-kit (v$(sed -n 's/^  version: "\(.*\)"/\1/p' "$USK/z-container-kit/SKILL.md" | head -1))"
+  else
+    echo "  canonical kit: MISSING at $USK/z-container-kit (bootstrap: git clone https://github.com/super-z-kits/z-container-kit.git)"
+  fi
+  exit 0
+fi
+
+# ------------------------------------------------------------ write config ---
+if [ -n "$PREFIX_ARG" ]; then
+  validate "$PREFIX_ARG"
+  if [ -f "$CFG" ] && [ "$(cur_prefix)" != "$PREFIX_ARG" ] && [ "$FORCE" != 1 ]; then
+    echo "zk-init: $CFG already exists (ZK_PREFIX=$(cur_prefix)) — refusing to overwrite." >&2
+    echo "  keep it as-is, or re-init deliberately: bash $SCRIPT_DIR/zk-init $PREFIX_ARG --force" >&2
+    exit 1
+  fi
+  mkdir -p "$AGENTS"
+  printf 'ZK_PREFIX=%s\n' "$PREFIX_ARG" > "$CFG"
+  chmod 0644 "$CFG"   # committed, non-secret (a project name only)
+  echo "[ok] wrote $CFG (ZK_PREFIX=$PREFIX_ARG)"
+  echo "     it names $USK/${PREFIX_ARG}-remote.url, ${PREFIX_ARG}-doppler.env,"
+  echo "     $SYNC/${PREFIX_ARG}-snapshots/, ${PREFIX_ARG}-state.env"
+  echo "     commit it so it travels with the repo: git -C $PROJ add .agents/"
+elif [ -f "$CFG" ]; then
+  echo "[ok] $CFG already present (ZK_PREFIX=$(cur_prefix)) — nothing to write"
+else
+  echo "zk-init: no $CFG and no <prefix> given." >&2
+  echo "  usage: bash $SCRIPT_DIR/zk-init <project-name>   # lowercase [a-z0-9-], max 24" >&2
+  exit 1
+fi
+
+# ------------------------------------------------------------ git hygiene ---
+# (from v3 install.sh step 7 — the one git-config touchpoint the kit needs.
+# LIVE-only: a scratch ZK_PROJ must not leak entries into the global config)
+if [ "$PROJ" = "/home/z/my-project" ] || [ -z "${ZK_PROJ:-}" ]; then
+  git config --global --unset-all safe.directory "$PROJ" 2>/dev/null || true
+  git config --global --add safe.directory "$PROJ" 2>/dev/null || true
+fi
+
+# --------------------------------------------------------- --migrate-v3 ------
+if [ "$MIGRATE" = 1 ]; then
+  if [ ! -f "$CFG" ]; then
+    echo "zk-init --migrate-v3: no $CFG — pass a prefix too:" >&2
+    echo "  bash $SCRIPT_DIR/zk-init <name> --migrate-v3" >&2
+    exit 1
+  fi
+  echo "--- migrate-v3: stripping the instantiated kit (keeping .agents/config) ---"
+  REMOVED=0
+  for p in SKILL.md reference.md README.md scripts kb evidence; do
+    if [ -e "$AGENTS/$p" ]; then
+      rm -rf "$AGENTS/$p" && REMOVED=$((REMOVED+1)) && echo "[ok] removed .agents/$p"
+    fi
+  done
+  # scripts/ entries: ONLY marker-confirmed kit artifacts (see
+  # _is_kit_artifact) — a user file that merely mentions the kit survives.
+  # Unmarked known-name files are listed for manual review, never deleted.
+  REVIEW=""
+  for f in $V3_HELPERS; do
+    fp="$PROJ/scripts/$f"
+    [ -f "$fp" ] || continue
+    if _is_kit_artifact "$fp"; then
+      rm -f "$fp" && REMOVED=$((REMOVED+1)) && echo "[ok] removed scripts/$f (kit artifact)"
+    else
+      REVIEW="$REVIEW scripts/$f"
+    fi
+  done
+  [ -n "$REVIEW" ] && echo "[note] kept (helper name but NO kit marker — remove by hand if it is a v3 copy):$REVIEW"
+  echo "[ok] migrate-v3 done ($REMOVED items removed; .agents/config kept)"
+  echo "     commit the removal: bash $SCRIPT_DIR/zsave 'v4 migration: strip v3 kit tree'"
+fi
+
+echo
+echo "next: bash $SCRIPT_DIR/zsession            # situation report"
+echo "      bash $SCRIPT_DIR/zsave 'msg'         # commit + snapshot + push"

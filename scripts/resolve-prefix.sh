@@ -1,170 +1,174 @@
 # resolve-prefix.sh — sourced by other scripts to discover ZK_PREFIX.
+# (kit v4.0 — PROJ-based identity: the .env pattern)
+#
+# The kit is ZERO-INSTALL: scripts live once per ACCOUNT (canonical package
+# at /home/user_skills/z-container-kit/) and are location-agnostic. Project
+# identity comes from the PROJECT, never from this script's own location:
+#
 # Resolution order (highest priority first):
-#   1. Explicit ZK_PREFIX env var — including the value a CALLER just sourced
-#      from .agents/config (the v3.1 canonical location; scripts source
-#      "$SCRIPT_DIR/../config" BEFORE falling back to this file, so an
-#      instantiated kit's prefix arrives here as tier 1)
-#   2. ZK_PREFIX from /home/user_skills/*-config.env (legacy per-project
-#      discovery; install.sh migrates it into .agents/config but leaves the
-#      file in place — other v2.x-era tools may still read it)
-#   3. SELF-HEALING: scan durable artifacts (/home/sync/*-state.env,
-#      /home/sync/*-snapshots/, /home/user_skills/*-remote.url,
-#      /home/user_skills/*-doppler.env) for any existing prefix — prevents
-#      drift (Friction #11). Only if NO existing prefix is found:
-#   3f. Derive from `git -C $PROJ remote get-url origin` (basename, sanitized)
-#       — true cold start, no prior state
-#   4. Fail loudly with actionable hint
+#   1. ZK_PREFIX env var — explicit override (tests, one-off commands)
+#   2. $PROJ/.agents/config — the project's zk env, one line
+#      `ZK_PREFIX=<name>`: git-tracked, travels with the repo, survives boot
+#      (the platform only rewrites .env). THE canonical location. v3.x repos
+#      already carry this exact file — zero migration needed.
+#   3. Exactly one legacy $USK/*-config.env (v2-era) — used, with a stderr
+#      migration hint
+#   4. Origin-URL basename — ONLY when unambiguous:
+#        - no prefix artifacts exist anywhere (true first project), or
+#        - existing artifacts MATCH the derived name (resuming the project)
+#      If artifacts exist with DIFFERENT prefixes, this FAILS and lists them.
+#      Shared artifacts are NEVER silently adopted: on a multi-repo account
+#      they are ambiguous evidence, not identity (the "zk-onboard-test"
+#      lesson — a stale test project's prefix leaked into the next session).
+#   5. Loud failure with the setup recipe.
+#
+# Artifact prefixes (state/snapshots/credential/doppler files) are per-USER;
+# they are used for conflict DETECTION and reporting (_zk_found_prefixes),
+# never for silent resolution.
 #
 # Why no .env tier: the platform REWRITES .env on every recycle (only .env —
-# other files survive), so .env is documented as boot-managed, DATABASE_URL-
-# only state. Teaching scripts to read ZK_PREFIX from .env invites a config
-# that evaporates at the next boot. .agents/config (git-tracked) is the
-# durable answer; tiers 2-4 below are the fallback chain.
+# other files survive). .agents/config is the boot-safe equivalent.
 #
 # Usage: source this file at the top of any script that needs ZK_PREFIX.
 #   source "$(dirname "$0")/resolve-prefix.sh"
-# Sets PREFIX on success. Returns nonzero (or exits 1 in package mode) on
-# failure — callers decide whether failure is fatal (zsave) or degradable
-# (zsession prints cold-start help instead).
+# Sets PREFIX on success (return 0). Returns 1 on failure — callers decide
+# whether failure is fatal (zsave) or degradable (zsession prints cold-start
+# help instead). Also defines _zk_found_prefixes for reporting.
+
+_ZK_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)"
+
+# All prefix-ish artifacts on this account (space-separated, deduped, sorted).
+# Read-only; used for conflict detection + zsession display.
+_zk_found_prefixes() {
+  local p pfx=""
+  local USK="${ZK_USK:-/home/user_skills}"
+  local SYNC="${ZK_SYNC:-/home/sync}"
+  for f in "$SYNC"/*-state.env; do
+    [ -f "$f" ] || continue
+    p="$(sed -n 's/^ZK_PREFIX=//p' "$f" 2>/dev/null | head -1 | tr -d "\"'")"
+    [ -n "$p" ] && pfx="$pfx $p"
+  done
+  for d in "$SYNC"/*-snapshots; do
+    [ -d "$d" ] || continue
+    p="$(basename "$d" | sed -E 's/-snapshots$//')"
+    [ -n "$p" ] && [ "$p" != "*-snapshots" ] && pfx="$pfx $p"
+  done
+  for f in "$USK"/*-remote.url "$USK"/*-doppler.env; do
+    [ -f "$f" ] || continue
+    p="$(basename "$f" | sed -E 's/-(remote\.url|doppler\.env)$//')"
+    [ -n "$p" ] && pfx="$pfx $p"
+  done
+  printf '%s\n' $pfx | sort -u | grep -v '^$' | tr '\n' ' '
+}
+
+_zk_strip_quotes() { printf '%s' "$1" | tr -d "\"'"; }
+
+_zk_fail_recipe() {
+  local PROJ="$1" USK="$2" found="$3" configs="$4"
+  {
+    echo "ZK_PREFIX not set for this project. Fix with ONE of:" >&2
+    echo "  (a) bash "$_ZK_SCRIPTS_DIR/zk-init" <name>        # canonical: writes $PROJ/.agents/config" >&2
+    echo "  (b) ZK_PREFIX=<name> bash <script>          # explicit one-off override" >&2
+    if git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
+      echo "  (c) a remote exists — write the config (a) or pass ZK_PREFIX (b)" >&2
+    else
+      echo "  (c) git -C $PROJ remote add origin <url>    # derive from URL basename (if unambiguous)" >&2
+    fi
+    [ -n "$found" ] && echo "  existing prefixes on this account:$found — pick THIS project's, not another's" >&2
+    [ -n "$configs" ] && printf '%s\n' "$configs" | sed 's/^/    legacy: /' >&2
+  }
+}
 
 _resolve_prefix() {
-  local PROJ PRE
+  local PROJ USK SYNC p f derived found configs count
 
-  # (1) Explicit env var override — always wins
+  # (1) explicit env var — always wins
   if [ -n "${ZK_PREFIX:-}" ]; then
     PREFIX="$ZK_PREFIX"
     return 0
   fi
 
   PROJ="${ZK_PROJ:-/home/z/my-project}"
-  local USK="${ZK_USK:-/home/user_skills}"   # scratch-testing override
-  local SYNC="${ZK_SYNC:-/home/sync}"        # scratch-testing override
+  USK="${ZK_USK:-/home/user_skills}"
+  SYNC="${ZK_SYNC:-/home/sync}"
 
-  # (2) Legacy per-project discovery via /home/user_skills/*-config.env
-  local configs count
-  configs=$(ls "$USK"/*-config.env 2>/dev/null || true)
-  # grep -c prints 0 AND exits 1 on zero matches — `|| true` keeps count a clean
-  # integer instead of a bogus "0\n0" (PR#2 review F6)
-  count=$(printf '%s\n' "$configs" | grep -c . 2>/dev/null || true)
-  if [ "$count" = "1" ]; then
-    # Single config — unambiguous, use it
-    # shellcheck disable=SC1090
-    source "$configs" 2>/dev/null || true
-    if [ -n "${ZK_PREFIX:-}" ]; then
-      PREFIX="$ZK_PREFIX"
+  # (2) project config — the canonical identity (.env pattern)
+  if [ -f "$PROJ/.agents/config" ]; then
+    p="$(_zk_strip_quotes "$(sed -n 's/^ZK_PREFIX=//p' "$PROJ/.agents/config" 2>/dev/null | head -1)")"
+    if [ -n "$p" ]; then
+      PREFIX="$p"
       return 0
     fi
   fi
-  # (count = 0 OR count > 1: fall through to (3))
 
-  # (3) SELF-HEALING: scan for any existing prefix in durable artifacts BEFORE
-  # deriving from the git remote URL. This prevents prefix drift (Friction #11):
-  # if a prior session used ZK_PREFIX=zk but the git remote basename is
-  # zk-stress-test, naive derivation would orphan all zk-* state/cred/doppler
-  # files. By scanning existing artifacts first, the derivation agrees with
-  # whatever prefix prior sessions used. Only derive from the remote URL if
-  # NO existing prefix is found anywhere.
-  local existing_prefix=""
-  # (3a) Scan /home/sync/*-state.env (recycle detector files — per-chat but
-  #      reflect whatever prefix was last zsave'd in this chat)
-  for f in "$SYNC"/*-state.env; do
-    [ -f "$f" ] || continue
-    # state.env is parsed with sed (never sourced); ZK_PREFIX= is one of the keys
-    p=$(sed -n 's/^ZK_PREFIX=//p' "$f" 2>/dev/null | head -1)
+  # (3) legacy single config.env (v2-era per-project discovery). Conflict-
+  # checked like tier 4: if the origin URL derives a DIFFERENT prefix, this
+  # is ambiguous on a multi-repo account — fail loudly instead of silently
+  # adopting the legacy value (MED-3, round 8 validation).
+  configs=$(ls "$USK"/*-config.env 2>/dev/null || true)
+  count=$(printf '%s\n' "$configs" | grep -c . 2>/dev/null || true)
+  if [ "$count" = "1" ]; then
+    p="$(_zk_strip_quotes "$(sed -n 's/^ZK_PREFIX=//p' "$configs" 2>/dev/null | head -1)")"
     if [ -n "$p" ]; then
-      existing_prefix="$p"
-      break
-    fi
-  done
-  # (3b) Scan /home/sync/*-snapshots/ dirs (per-chat, but reveal prior prefixes)
-  if [ -z "$existing_prefix" ]; then
-    for d in "$SYNC"/*-snapshots; do
-      [ -d "$d" ] || continue
-      # dir name format: <prefix>-snapshots
-      p=$(basename "$d" | sed -E 's/-snapshots$//')
-      if [ -n "$p" ] && [ "$p" != "*" ]; then
-        existing_prefix="$p"
-        break
+      local ru
+      ru=$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)
+      if [ -n "$ru" ]; then
+        local rd
+        rd=$(printf '%s' "$ru" \
+          | sed -E 's|^[^:]+://||; s|.*[:/]||; s|\.git$||; y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/' \
+          | tr -dc 'a-z0-9-' | head -c 24)
+        if [ -n "$rd" ] && [ "$rd" != "$p" ]; then
+          echo "resolve-prefix: AMBIGUOUS — legacy $configs says '$p' but the origin URL" >&2
+          echo "  derives '$rd'. Refusing to guess between projects; make it explicit:" >&2
+          found="$(_zk_found_prefixes)"
+          _zk_fail_recipe "$PROJ" "$USK" "$found" "$configs"
+          return 1
+        fi
       fi
-    done
-  fi
-  # (3c) Scan /home/user_skills/*-remote.url (cross-chat, PolarFS — most durable)
-  if [ -z "$existing_prefix" ]; then
-    for f in "$USK"/*-remote.url; do
-      [ -f "$f" ] || continue
-      p=$(basename "$f" | sed -E 's/-remote\.url$//')
-      if [ -n "$p" ] && [ "$p" != "*" ]; then
-        existing_prefix="$p"
-        break
-      fi
-    done
-  fi
-  # (3d) Scan /home/user_skills/*-doppler.env (cross-chat, PolarFS)
-  if [ -z "$existing_prefix" ]; then
-    for f in "$USK"/*-doppler.env; do
-      [ -f "$f" ] || continue
-      p=$(basename "$f" | sed -E 's/-doppler\.env$//')
-      if [ -n "$p" ] && [ "$p" != "*" ]; then
-        existing_prefix="$p"
-        break
-      fi
-    done
-  fi
-  # (3e) Scan /home/user_skills/*-config.env (single-config case already handled
-  #      in step 2, but in multi-config scenarios, pick the first one as a tie-
-  #      breaker rather than failing — better than deriving from remote URL)
-  if [ -z "$existing_prefix" ] && [ "$count" -ge 1 ] 2>/dev/null; then
-    first_config=$(printf '%s\n' "$configs" | head -1)
-    if [ -n "$first_config" ] && [ -f "$first_config" ]; then
-      # v2.x failed loudly here; v3.1 tie-breaks — restore the safety net with
-      # a stderr note so a multi-project account can catch a wrong pick (PR#2 F3)
-      if [ "$count" -gt 1 ] 2>/dev/null; then
-        echo "resolve-prefix: MULTIPLE config.env files — tie-breaking with $(basename "$first_config") of:" >&2
-        printf '%s\n' "$configs" | sed 's/^/    /' >&2
-        echo "  if that is the WRONG project, re-run with ZK_PREFIX=<name>" >&2
-      fi
-      # shellcheck disable=SC1090
-      p=$(source "$first_config" 2>/dev/null && printf '%s' "${ZK_PREFIX:-}")
-      if [ -n "$p" ]; then
-        existing_prefix="$p"
-      fi
+      echo "resolve-prefix: using legacy $configs — migrate to the project config:" >&2
+      echo "  echo 'ZK_PREFIX=$p' > $PROJ/.agents/config && rm '$configs'" >&2
+      PREFIX="$p"
+      return 0
     fi
   fi
-  if [ -n "$existing_prefix" ]; then
-    PREFIX="$existing_prefix"
-    return 0
-  fi
+  # (count = 0 OR > 1: fall through — multiple legacy configs are ambiguous
+  # on a multi-repo account; they surface in the failure recipe, never pick)
 
-  # (3f) Last resort: derive from git remote URL — true cold start, no prior state
-  local remote_url derived
+  found="$(_zk_found_prefixes)"
+
+  # (4) origin-URL basename — only when unambiguous
+  local remote_url
   remote_url=$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)
   if [ -n "$remote_url" ]; then
-    # Examples:
-    #   https://ghp_xxx@github.com/user/my-project.git -> my-project
-    #   git@github.com:user/my-cool-repo              -> my-cool-repo
-    #   https://github.com/user/zk-stress-test        -> zk-stress-test
     derived=$(printf '%s' "$remote_url" \
       | sed -E 's|^[^:]+://||; s|.*[:/]||; s|\.git$||; y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/' \
       | tr -dc 'a-z0-9-' \
       | head -c 24)
     if [ -n "$derived" ]; then
-      PREFIX="$derived"
-      return 0
+      if [ -z "$found" ]; then
+        PREFIX="$derived"
+        echo "resolve-prefix: derived ZK_PREFIX=$derived from the origin URL (no prior state — first project on this account)." >&2
+        echo "  pin it in the repo: echo 'ZK_PREFIX=$derived' > $PROJ/.agents/config" >&2
+        return 0
+      fi
+      case " $found " in
+        *" $derived "*)
+          PREFIX="$derived"   # existing artifacts match — resuming this project
+          return 0
+          ;;
+        *)
+          echo "resolve-prefix: AMBIGUOUS — the origin URL derives '$derived' but this" >&2
+          echo "  account's artifacts use:$found" >&2
+          echo "  Refusing to guess between projects. Make this project's identity explicit:" >&2
+          _zk_fail_recipe "$PROJ" "$USK" "$found" "$configs"
+          return 1
+          ;;
+      esac
     fi
   fi
 
-  # (4) Fail loudly with actionable hint
-  {
-    echo "ZK_PREFIX not discoverable. Set one of:" >&2
-    echo "  (a) ZK_PREFIX=<name> bash <script>                          # explicit override" >&2
-    echo "  (b) .agents/config in your repo: ZK_PREFIX=<name>           # canonical (run install.sh)" >&2
-    echo "  (c) echo 'ZK_PREFIX=<name>' > ${ZK_USK:-/home/user_skills}/<name>-config.env  # legacy discovery" >&2
-    echo "  (d) git -C $PROJ remote add origin <url>                    # derive ZK_PREFIX from URL basename" >&2
-    if [ "$count" -gt 1 ] 2>/dev/null; then
-      echo "  (multiple config.env files found — pass ZK_PREFIX explicitly to disambiguate)" >&2
-      printf '%s\n' "$configs" | sed 's/^/    /' >&2
-    fi
-  }
+  # (5) loud failure
+  _zk_fail_recipe "$PROJ" "$USK" "$found" "$configs"
   return 1
 }
 

@@ -1,10 +1,11 @@
 # zsave internals
 
-Full 6-step pipeline with exclude rules. Extracted from SKILL.md v2.3.3.
+Full pipeline with exclude rules. Extracted from SKILL.md v2.3.3; v4.0 adds
+steps 5b (zip rebuild) and 7 (worktree prune).
 ## Saving work — zsave
 
 ```
-bash /home/z/my-project/scripts/zsave "<what you just finished>"
+bash /home/user_skills/z-container-kit/scripts/zsave "<what you just finished>"
 ```
 
 Does, in order **[V]** (each step degrades gracefully; the exit code is nonzero
@@ -22,17 +23,21 @@ if commit/snapshot/repo.tar fail — a push failure is a warning):
    success it also refreshes the `${ZK_PREFIX}-remote.url` credential file
    (`/home/user_skills/` only, mode 0600 — v3.1: the `/home/sync/` copy is no
    longer written; ossfs ignores chmod and left it world-readable at 0777,
-   friction #9/#19; install.sh removes stale copies) for fresh-chat remote
+   friction #9/#19; refresh.sh removes stale copies) for fresh-chat remote
    recovery; push
    stderr is echoed with embedded PATs masked;
 4. tar snapshot to `/home/sync/${ZK_PREFIX}-snapshots/proj-<ts>.tar` (keep last 5).
    Excluded: `node_modules/`, `.next/`, `.turbo/` at ANY depth, `upload/`,
    `dev.log`, and OFFICIAL skills (boot re-extracts them); CUSTOM skills
-   (including this kit) are kept;
+   are kept (v4: the kit no longer lives in the repo, so this is only
+   user-added skills);
 5. refresh `/home/sync/repo.tar` — the artifact the platform restores at
    boot — so a force-killed container comes back at your latest zsave, not a
    stale one;
-6. write `/home/sync/${ZK_PREFIX}-state.env` atomically (recycle detector for zsession).
+6. write `/home/sync/${ZK_PREFIX}-state.env` atomically (recycle detector for zsession);
+7. v4 housekeeping (LIVE only): rebuild `/home/user_skills/z-container.zip`
+   if the platform consumed it at a sub-agent spawn (step 5b), then prune
+   stale git worktree entries.
 
 Run it: after every micro-milestone — any good moment: a file finished, a
 step verified, a bug fixed — before risky operations, and at least every ~10

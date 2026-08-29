@@ -9,7 +9,8 @@ The kit ships these helpers in `scripts/`:
 **z-container-kit scripts (bash):**
 - `zsave "msg"` — commit + push + snapshot + repo.tar refresh + credential file (F16: verified post-write)
 - `zsession` — read-only situation report (F17: prints masked credential file URL; m11: notes worklog absence; m12: deduped recs)
-- `install.sh` — installs the kit + helpers everywhere (idempotent)
+- `zk-init` / `refresh.sh` — v4 replacements for the removed install.sh
+  (project setup / account-level package refresh)
 - `daemonize.py` — double-fork background process for surviving toolcalls
 - `wdt_watch.py` — watchdog observation helper
 - `zremote` (audit F6) — PAT-masking `git remote` viewer (replaces `git remote -v` muscle memory)
