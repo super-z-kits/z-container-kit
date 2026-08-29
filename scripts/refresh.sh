@@ -48,10 +48,13 @@ fi
 if [ -d "$USK" ]; then
   # per-run staging names: two concurrent refreshes never clobber each
   # other's staging tree (H-2 — a shared fixed name could swap a HALF-copied
-  # tree in = torn kit). Stale leftovers from a killed refresh are removed.
+  # tree in = torn kit). Stale leftovers from a KILLED refresh are removed —
+  # age-gated (-mmin +10) so the glob can never delete a CONCURRENT refresh's
+  # live staging/aside tree.
   INCOMING="$PKG.incoming.$$"
   ASIDE="$PKG.old.$$"
-  rm -rf "$USK"/z-container-kit.incoming.* "$USK"/z-container-kit.old.* 2>/dev/null
+  find "$USK" -maxdepth 1 \( -name 'z-container-kit.incoming.*' -o -name 'z-container-kit.old.*' \) \
+    -mmin +10 -exec rm -rf {} + 2>/dev/null
   rm -rf "$INCOMING"
   if cp -r "$KIT" "$INCOMING" 2>/dev/null; then
     # strip VCS metadata + caches; the package must never be a nested repo

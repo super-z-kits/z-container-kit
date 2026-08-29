@@ -66,8 +66,8 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "[fail] env file not found: $ENV_FILE" >&2
   echo "       create it with the ATOMIC write recipe from secrets-vault-kit SKILL.md" >&2
   echo "       fact #4 (tmp + mv, mode 0600, fresher-wins — never a bare redirect):" >&2
-  echo "         T=\"\$ENV_FILE.tmp.\$\$\"" >&2
-  echo "         printf 'DOPPLER_PT=%s\nDOPPLER_PROJECT=%s\nDOPPLER_CONFIG=%s\n' \"\$DOPPLER_PT\" \"\$DOPPLER_PROJECT\" \"\$DOPPLER_CONFIG\" > \"\$T\"" >&2
+  echo "         T=\"\$ENV_FILE.tmp.\$\$\"; NEW_TS=\$(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2
+  echo "         printf 'DOPPLER_PT=%s\nDOPPLER_PROJECT=%s\nDOPPLER_CONFIG=%s\nDOPPLER_PT_STORED_AT=%s\n' \"\$DOPPLER_PT\" \"\$DOPPLER_PROJECT\" \"\$DOPPLER_CONFIG\" \"\$NEW_TS\" > \"\$T\"" >&2
   echo "         chmod 0600 \"\$T\" && mv -f \"\$T\" \"\$ENV_FILE\"" >&2
   exit 1
 fi
