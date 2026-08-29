@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zk-init — project-level kit initialization (kit v4.0)
+# zk-init — project-level kit initialization (kit v4.1)
 #
 # The kit is ZERO-INSTALL: it lives once per ACCOUNT at
 # /home/user_skills/z-container-kit/ (canonical, refreshed by refresh.sh).

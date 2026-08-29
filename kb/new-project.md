@@ -22,20 +22,20 @@ file (`.agents/config`, the .env pattern). No kit copy, no shims, no symlink
 ever enters the project:
 
 ```bash
-# 1) (optional but recommended) wire the remote first — identity derivation
-#    and credential persistence both key off the origin URL:
-git -C /home/z/my-project remote add origin https://<PAT>@github.com/<user>/<repo>.git
-
-# 2) initialize the project's identity (the ONLY per-project artifact):
+# 1) initialize the project's identity (the ONLY per-project artifact):
 bash /home/user_skills/z-container-kit/scripts/zk-init <your-project-name>
 #    -> writes .agents/config (ZK_PREFIX=<name>) — nothing else
+#    (identity NEVER derives from the remote URL — it is configuration you choose)
 
-# 3) commit the identity so it travels with the repo:
+# 2) commit the identity so it travels with the repo:
 git -C /home/z/my-project add .agents/
 git -C /home/z/my-project commit -m "kit: project identity (.agents/config)"
 
-# 4) first save (anchors repo.tar + snapshots + credential file):
+# 3) first save (anchors repo.tar + snapshots + credential file):
 bash /home/user_skills/z-container-kit/scripts/zsave "project bootstrap checkpoint"
+#    no remote yet? zsave still commits + snapshots locally (snapshot-only
+#    mode) — add the remote when you have one; the credential file is written
+#    on the first SUCCESSFUL push, and identity does not depend on it
 ```
 
 If you picked the wrong prefix, fix it deliberately:
@@ -60,22 +60,25 @@ read them; strip with `zk-init --migrate-v3` and zsave the removal.
   projects with the same prefix would clobber each other's credential files
   (see `kb/parallel-sessions.md`).
 - short and stable: it outlives repo renames (it is NOT derived from the repo
-  name after setup — derivation is only the cold-start fallback).
+  name — it is configuration you choose once at `zk-init` and commit).
 
-## How helpers resolve the prefix (v4 order)
+## How helpers resolve the prefix (v4.1 — configuration only)
 
 1. `ZK_PREFIX` env var (explicit override — tests, one-off commands)
 2. `$PROJ/.agents/config` — the canonical identity (git-tracked; what
    `zk-init` writes; what survives boot, repo.tar, and `reset --hard`)
-3. exactly one legacy `/home/user_skills/*-config.env` (v2-era; used with a
-   migration hint)
-4. origin-URL basename — ONLY if unambiguous: no prefix artifacts exist
-   anywhere (true first project), or the existing artifacts MATCH the derived
-   name. If other prefixes exist, resolution FAILS listing them —
-   shared artifacts are per-USER evidence, never identity. This is the
-   multi-repo protection: a stale test project's prefix can never leak into
-   a new project's session (the "zk-onboard-test" lesson).
-5. loud failure with the exact fix commands
+3. nothing else — loud failure with the exact fix commands
+
+There is no tier 3+. No artifact scanning, no legacy `config.env` globbing,
+no origin-URL derivation — v4.0 tried to keep those as "last resort"
+tiers with conflict checks, which just rebuilt the discovery machinery the
+redesign was supposed to delete (and made every helper harder to reason
+about). v4.1 removes them: shared artifacts are per-USER evidence, never
+identity, so they are not consulted at all. The multi-repo protection is
+structural — a stale test project's prefix can't leak into a new project's
+session because nothing ever looks at shared files for identity (the
+"zk-onboard-test" lesson). A missing config is a one-command fix
+(`zk-init <name>`); a wrong silent guess is data loss.
 
 ## Why config lives in .agents/ (design notes)
 

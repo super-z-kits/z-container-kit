@@ -1,18 +1,22 @@
-# Testing the helpers safely
+# Pointing the helpers at another project (and scratch testing)
 
-ZK_PROJ / ZK_SYNC / ZK_USK env overrides for scratch testing.
-Extracted from SKILL.md v2.3.3; ZK_USK added in v3.1; rewritten for v4.0
-(zero-install — the helpers under test run from the canonical kit, the
-scratch pattern is a config line, not an install).
+ZK_PROJ / ZK_SYNC / ZK_USK env overrides: the general mechanism for running
+the kit against ANY project directory — a worktree, a second project on the
+same account, a sandbox/scratch copy, or a test harness. Same mechanism,
+same rules. (Extracted from SKILL.md v2.3.3; ZK_USK added in v3.1; rewritten
+for v4.0; reframed v4.1 after usability rounds showed agents hunting for
+exactly this under "testing" docs when they needed it for REAL workflows.)
 
-## Testing the helpers safely
+## Pointing helpers at a non-default project
 
-The helpers honor overrides so tests never touch the real `/home/sync`
-artifacts (an accidental real zsave would overwrite `/home/sync/repo.tar` —
-the boot-restore artifact — with whatever the project contains at that
-moment), and never touch the real `/home/user_skills` (prefix resolution
-would read your real config/credential files; refresh.sh would refresh the
-real canonical package):
+The helpers default to `/home/z/my-project` + `/home/user_skills` +
+`/home/sync`. Point them anywhere else with the overrides (this is also
+what makes scratch TESTS safe — same mechanism, not a separate "test mode").
+Overriding keeps runs away from the real `/home/sync` artifacts (an
+accidental real zsave would overwrite `/home/sync/repo.tar` — the
+boot-restore artifact — with whatever the project contains at that moment)
+and away from the real `/home/user_skills` (credential files; refresh.sh
+would refresh the real canonical package):
 
 ```
 S=/tmp/my-project/helper-test; mkdir -p $S/demo $S/sync $S/usk
@@ -35,12 +39,12 @@ Notes:
 - `ZK_PROJ` redirects the project dir (watchdog checks and live-project
   checks are skipped cleanly for scratch paths).
 - `ZK_SYNC` redirects snapshots/repo.tar/state writes.
-- `ZK_USK` redirects the prefix-resolution chain (project config is under
-  ZK_PROJ; legacy config.env glob and the artifact conflict-scan read
-  ZK_USK/ZK_SYNC), the credential-file write, zsession's kit registry, and
-  refresh.sh's package refresh. Without it, a scratch run still READS the
-  real `/home/user_skills` during conflict detection and zsession reports
-  the real canonical package path.
+- `ZK_USK` redirects the credential-file write, the canonical-package
+  presence check in zsession, and refresh.sh's package refresh. Without it,
+  a scratch run still READS the real `/home/user_skills` (zsession reports
+  the real canonical package path). Prefix resolution itself no longer
+  reads any account-wide state (v4.1: env + project config only), so
+  scratch identity is fully controlled by `ZK_PROJ`/`ZK_PREFIX`.
 - The python helpers (`doppler_fetch.py`, `verify_access.py`) honor
   `ZK_USK` / `ZK_PROJ` the same way (v3.1.5 — PR#2 review F4).
 - `ZK_PREFIX` passed explicitly outranks everything (tier 1) — use it to test

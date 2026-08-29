@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zsave — one-command persistence for the Z container. (kit v4.0.0)
+# zsave — one-command persistence for the Z container. (kit v4.1.0)
 #
 #   0. maintain .git/info/exclude (uploads/logs/build junk stay out of git)
 #      + auto-exclude untracked NESTED git repos (scratch clones would
@@ -28,10 +28,9 @@
 # exit:   0 saved (push failure warns but exits 0); 1 if commit/snapshot/
 #         repo.tar failed; 75 if another zsave holds the lock.
 set -uo pipefail
-# Resolve ZK_PREFIX — location-agnostic (kit v4.0 zero-install): identity
-# comes from the PROJECT ($PROJ/.agents/config — the .env pattern), never
-# from this script's own location. Order: ZK_PREFIX env > project config >
-# legacy config.env > origin-URL derivation (conflict-checked).
+# Resolve ZK_PREFIX — location-agnostic (kit v4.1 zero-install): identity
+# is CONFIGURATION (.env pattern), never discovery. Exactly two sources:
+# ZK_PREFIX env > $PROJ/.agents/config. Anything else fails loudly.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PREFIX=""
 if [ -f "$SCRIPT_DIR/resolve-prefix.sh" ]; then
@@ -68,14 +67,14 @@ if command -v flock >/dev/null 2>&1; then
   exec 9>/tmp/.zsave.lock
   if ! flock -n 9; then
     echo "zsave: another zsave is running in this container — aborting." >&2
-    echo "       (one zsave at a time; sub-agents defer to the coordinating agent)" >&2
+    echo "       (one zsave at a time; sibling agents share this lock — wait a few seconds and re-run)" >&2
     exit 75
   fi
 else
   echo "[note] flock not available — concurrency protection disabled" >&2
 fi
 
-echo "== zsave $TS (UTC) =="
+echo "== zsave $TS (UTC) — proj=$PROJ prefix=$PREFIX =="
 
 # --- 0. keep regenerable junk out of git (affects UNTRACKED files only) -------
 GITDIR="$(git -C "$PROJ" rev-parse --git-common-dir 2>/dev/null || true)"

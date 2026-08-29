@@ -33,7 +33,7 @@ git -C /home/z/my-project fetch origin                                   # fetch
 git -C /home/z/my-project log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK the commits
 # if the commits match your expectation, proceed; if they look like the WRONG repo's history, STOP and ask the user
 git -C /home/z/my-project reset --hard origin/main   # restore the workspace — .agents/config comes back WITH the repo
-source /home/z/my-project/.agents/config && echo "$ZK_PREFIX"   # verify identity returned; absent (repo predates the kit) -> bash "$KIT/scripts/zk-init" <name>
+source /home/z/my-project/.agents/config && echo "$ZK_PREFIX"   # verify identity returned; absent (repo predates the kit) -> bash "$KIT/scripts/zk-init" <name> — in a RECOVERY reuse the prefix from the credential filename (before -remote.url), never invent one
 bash "$KIT/scripts/zsave" "fresh-chat bootstrap checkpoint"
 ```
 

@@ -27,11 +27,12 @@ Why: v3.x instantiated a full kit copy per repo (`.agents/` tree, `scripts/`
 shims, `skills/` symlink) — the copies went stale, the install flow carried
 a disproportionate share of the bug history, and the whole model assumed a
 single-project account. v4 is multi-kit and multi-repo by construction:
-every kit is a self-contained dir in `/home/user_skills/`, every project is
+every kit is a self-contained dir in `/home/user_skills/` (kits mind their
+own business — no cross-kit registries or managers), every project is
 a config line, upgrades happen once per account (atomic `refresh.sh`), and
-prefix resolution NEVER silently adopts a shared artifact (it fails loudly,
-listing the account's prefixes — a stale test project can't leak into the
-next session).
+prefix resolution reads ONLY the env var + the project's `.agents/config`
+(no artifact scanning, no URL guessing — a missing config fails loudly with
+the one-command fix, and a stale artifact can never leak into a session).
 
 - Project setup: `bash /home/user_skills/z-container-kit/scripts/zk-init <name>`
 - Account upgrade: `bash <updated-clone>/scripts/refresh.sh`
@@ -81,7 +82,7 @@ session's project), step 1 becomes
 | `SKILL.md` | operational survival guide — start here (MUST-READ session section first) |
 | `reference.md` | deep detail: boot sequence, storage internals, forensics, helper internals |
 | `scripts/zsave` | one-command persistence: commit + push + snapshot + `repo.tar` refresh |
-| `scripts/zsession` | read-only session situation report (recycle detection, kit & config registry) |
+| `scripts/zsession` | read-only session situation report (recycle detection, kit & config status) |
 | `scripts/zk-init` | project setup: writes `.agents/config` (`--migrate-v3` strips v3 leftovers) |
 | `scripts/refresh.sh` | account-level upgrade: atomic package refresh + zip rebuild |
 | `scripts/install.sh` | REMOVED in v4 (deprecation stub) |

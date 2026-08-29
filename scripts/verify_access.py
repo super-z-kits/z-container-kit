@@ -18,7 +18,7 @@ import urllib.request
 SECRETS = "/tmp/my-project/doppler-secrets.json"
 # No hardcoded repo — use env var or CLI arg. Fail loudly if neither is provided.
 REPO = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("VERIFY_REPO", "")
-# Resolve ZK_PREFIX: env var, then .agents/config (v3.1), then config.env glob
+# Resolve ZK_PREFIX: env var, then .agents/config (v4.1: config only — no discovery)
 USK = os.environ.get("ZK_USK", "/home/user_skills")      # scratch-testing override (PR#2 F4)
 PROJ = os.environ.get("ZK_PROJ", "/home/z/my-project")   # scratch-testing override (PR#2 F4)
 if not os.environ.get("ZK_PREFIX"):
@@ -31,25 +31,9 @@ if not os.environ.get("ZK_PREFIX"):
     except OSError:
         pass
 if not os.environ.get("ZK_PREFIX"):
-    import glob
-    configs = glob.glob(os.path.join(USK, "*-config.env"))
-    if len(configs) == 0:
-        print(f"ZK_PREFIX not configured — no {PROJ}/.agents/config and no {USK}/*-config.env found")
-        print("See SKILL.md 'New project setup'")
-        sys.exit(1)
-    elif len(configs) > 1:
-        print(f"Multiple project configs found: {configs}")
-        print("Set ZK_PREFIX in the environment to disambiguate")
-        sys.exit(1)
-    else:
-        with open(configs[0]) as f:
-            for line in f:
-                if line.startswith("ZK_PREFIX="):
-                    os.environ["ZK_PREFIX"] = line.strip().split("=", 1)[1]
-                    break
-        if not os.environ.get("ZK_PREFIX"):
-            print(f"ZK_PREFIX not set in {configs[0]}")
-            sys.exit(1)
+    print(f"ZK_PREFIX not configured — no ZK_PREFIX env var and no {PROJ}/.agents/config")
+    print("Fix: bash /home/user_skills/z-container-kit/scripts/zk-init <name>")
+    sys.exit(1)
 
 
 def req(url, headers, timeout=30):
