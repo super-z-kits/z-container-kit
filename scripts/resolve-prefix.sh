@@ -69,7 +69,11 @@ _zk_fail_recipe() {
     echo "ZK_PREFIX not set for this project. Fix with ONE of:" >&2
     echo "  (a) bash "$_ZK_SCRIPTS_DIR/zk-init" <name>        # canonical: writes $PROJ/.agents/config" >&2
     echo "  (b) ZK_PREFIX=<name> bash <script>          # explicit one-off override" >&2
-    echo "  (c) git -C $PROJ remote add origin <url>    # derive from URL basename (if unambiguous)" >&2
+    if git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
+      echo "  (c) a remote exists — write the config (a) or pass ZK_PREFIX (b)" >&2
+    else
+      echo "  (c) git -C $PROJ remote add origin <url>    # derive from URL basename (if unambiguous)" >&2
+    fi
     [ -n "$found" ] && echo "  existing prefixes on this account:$found — pick THIS project's, not another's" >&2
     [ -n "$configs" ] && printf '%s\n' "$configs" | sed 's/^/    legacy: /' >&2
   }
@@ -97,12 +101,30 @@ _resolve_prefix() {
     fi
   fi
 
-  # (3) legacy single config.env (v2-era per-project discovery)
+  # (3) legacy single config.env (v2-era per-project discovery). Conflict-
+  # checked like tier 4: if the origin URL derives a DIFFERENT prefix, this
+  # is ambiguous on a multi-repo account — fail loudly instead of silently
+  # adopting the legacy value (MED-3, round 8 validation).
   configs=$(ls "$USK"/*-config.env 2>/dev/null || true)
   count=$(printf '%s\n' "$configs" | grep -c . 2>/dev/null || true)
   if [ "$count" = "1" ]; then
     p="$(_zk_strip_quotes "$(sed -n 's/^ZK_PREFIX=//p' "$configs" 2>/dev/null | head -1)")"
     if [ -n "$p" ]; then
+      local ru
+      ru=$(git -C "$PROJ" remote get-url origin 2>/dev/null || true)
+      if [ -n "$ru" ]; then
+        local rd
+        rd=$(printf '%s' "$ru" \
+          | sed -E 's|^[^:]+://||; s|.*[:/]||; s|\.git$||; y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/' \
+          | tr -dc 'a-z0-9-' | head -c 24)
+        if [ -n "$rd" ] && [ "$rd" != "$p" ]; then
+          echo "resolve-prefix: AMBIGUOUS — legacy $configs says '$p' but the origin URL" >&2
+          echo "  derives '$rd'. Refusing to guess between projects; make it explicit:" >&2
+          found="$(_zk_found_prefixes)"
+          _zk_fail_recipe "$PROJ" "$USK" "$found" "$configs"
+          return 1
+        fi
+      fi
       echo "resolve-prefix: using legacy $configs — migrate to the project config:" >&2
       echo "  echo 'ZK_PREFIX=$p' > $PROJ/.agents/config && rm '$configs'" >&2
       PREFIX="$p"

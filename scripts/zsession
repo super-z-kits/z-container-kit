@@ -187,7 +187,7 @@ fi
 if [ -f "$USK/z-container.zip" ]; then
   echo "portable zip: present"
 else
-  echo "portable zip: MISSING (the next zsave rebuilds it — the platform consumes it at sub-agent spawn)"
+  echo "portable zip: MISSING (the next LIVE zsave rebuilds it — the platform consumes it at sub-agent spawn)"
 fi
 if [ -n "$PREFIX" ]; then
   echo "project config: $PROJ/.agents/config (ZK_PREFIX=$PREFIX)"

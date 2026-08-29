@@ -111,7 +111,7 @@ if [ -n "$KIT_OVERRIDE" ]; then
     exit 1
   fi
 else
-  for p in /home/user_skills/z-container-kit /tmp/my-project/kit /home/z/my-project/z-container-kit; do
+  for p in /home/user_skills/z-container-kit /tmp/my-project/kit; do
     if [ -f "$p/scripts/zk-init" ] && [ -f "$p/scripts/zsave" ]; then
       KIT="$p"; break
     fi
@@ -242,13 +242,8 @@ for f in selftest-marker.txt another.txt subdir/nested.txt; do
   fi
 done
 
-# Compare content
-if [ "$(cat "$PROJ/selftest-marker.txt" 2>/dev/null)" = "$(cat "$SCRATCH/.git.pre-wipe-backup/../../../.git.pre-wipe-backup/selftest-marker.txt" 2>/dev/null || echo missing)" ]; then
-  echo "  ✅ selftest-marker.txt content matches"
-else
-  # Better: compare via git, since the file may have come from the push
-  echo "  ℹ️  content comparison skipped (recovered from remote, expected to match)"
-fi
+# (content comparison is implicit: the recovered files came from the pushed
+# commit — the existence checks above + git's own integrity cover it)
 
 if [ "$PASS" != "1" ]; then
   echo

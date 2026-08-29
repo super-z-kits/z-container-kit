@@ -1,4 +1,4 @@
-# New project setup — instantiating the kit into a repo that has never used it
+# New project setup — bringing a brand-new repo under the kit (zero-install)
 
 > SCOPE: you are here when the project has NEVER used the kit — no
 > `.agents/config` in the workspace and no backup-repo history carrying one.

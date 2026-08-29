@@ -6,7 +6,7 @@ Extracted from SKILL.md v2.3.3.
 ## Troubleshooting trees
 
 **"The project reset itself"**
-1. `bash /home/z/my-project/scripts/zsession` — recycle? remote? worktrees?
+1. `bash /home/user_skills/z-container-kit/scripts/zsession` — recycle? remote? worktrees?
 2. `git -C /home/z/my-project log --all --oneline` — refs still there? Nothing
    committed is ever lost. `git fsck --lost-found` for dangling commits.
 3. `/home/sync/repo.tar` + `/home/sync/${ZK_PREFIX}-snapshots/` — if the tree is stale,
@@ -18,7 +18,7 @@ Extracted from SKILL.md v2.3.3.
 branch in my-project, move that work to a worktree first (law 5).
 
 **"zsave push failed"** — PAT expired/revoked (403) / repo renamed / diverged
-history. Diverged: `git pull --rebase origin main && bash scripts/zsave`.
+history. Diverged: `git pull --rebase origin main` then zsave again.
 Bad PAT: rotate at github.com/settings/tokens, then
 `git remote set-url origin https://<NEWPAT>@github.com/<u>/<r>.git` and zsave
 again (script output is PAT-masked either way). Repo renamed (pushes keep

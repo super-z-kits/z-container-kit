@@ -30,7 +30,7 @@ substitute your scratch project + `ZK_SYNC` scratch dir and run the same steps:
    SURVIVE the tar overlay — delete true leftovers before the next zsave or
    they will be committed. Phantom "modifications" are stale stat-cache —
    `git update-index --refresh` clears them (cosmetic).
-6. Re-anchor: `bash /home/z/my-project/scripts/zsave "post-restore checkpoint"`
+6. Re-anchor: `bash /home/user_skills/z-container-kit/scripts/zsave "post-restore checkpoint"`
    so repo.tar reflects the restored state.
 
 **C. Fresh chat / empty /home/sync:** `git clone` into my-project fails (the
