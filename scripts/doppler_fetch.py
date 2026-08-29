@@ -12,7 +12,7 @@ import stat
 import sys
 import urllib.request
 
-import os, sys, glob
+import os, sys
 USK = os.environ.get("ZK_USK", "/home/user_skills")      # scratch-testing override (PR#2 F4)
 PROJ = os.environ.get("ZK_PROJ", "/home/z/my-project")   # scratch-testing override (PR#2 F4)
 PREFIX = os.environ.get("ZK_PREFIX")
@@ -30,24 +30,10 @@ if not PREFIX:
         except OSError:
             pass
 if not PREFIX:
-    # Auto-discover from /home/user_skills/*-config.env (like resolve-prefix.sh)
-    configs = glob.glob(os.path.join(USK, "*-config.env"))
-    if len(configs) == 0:
-        print(f"ZK_PREFIX not configured — no {PROJ}/.agents/config and no {USK}/*-config.env found")
-        print("See SKILL.md 'New project setup'")
-        sys.exit(1)
-    elif len(configs) > 1:
-        print(f"Multiple project configs found: {configs}")
-        sys.exit(1)
-    else:
-        with open(configs[0]) as f:
-            for line in f:
-                if line.startswith("ZK_PREFIX="):
-                    PREFIX = line.strip().split("=", 1)[1]
-                    break
-        if not PREFIX:
-            print(f"ZK_PREFIX not set in {configs[0]}")
-            sys.exit(1)
+    # v4.1: identity is CONFIGURATION only — no discovery, no glob guessing
+    print(f"ZK_PREFIX not configured — no ZK_PREFIX env var and no {PROJ}/.agents/config")
+    print("Fix: bash /home/user_skills/z-container-kit/scripts/zk-init <name>")
+    sys.exit(1)
 ENV_FILE = os.path.join(USK, f"{PREFIX}-doppler.env")
 OUT_JSON = "/tmp/my-project/doppler-secrets.json"
 API = "https://api.doppler.com/v3"

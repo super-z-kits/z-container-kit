@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # zsession — Z-container situation report at session start (read-only).
-# (kit v4.0.0)
+# (kit v4.1.0) Reports THIS kit and THIS project only — kits are
+# self-contained by design; no cross-kit inventory, no artifact scans.
 # Makes no persistent changes: mount checks create+remove one unique
 # .${PREFIX}-rw-$$ probe file; git commands only read (status may refresh the
 # index stat-cache, which is cosmetic).
@@ -17,8 +18,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PREFIX=""
 if [ -f "$SCRIPT_DIR/resolve-prefix.sh" ]; then
-  # suppress ONLY the recipe here — the kit&config section below shows the
-  # account's found prefixes + the zk-init rec (better guidance than raw hints)
+  # suppress ONLY the recipe here — the kit & config section below shows the
+  # project-config state + the zk-init rec (better guidance than raw hints)
   # shellcheck disable=SC1091
   source "$SCRIPT_DIR/resolve-prefix.sh" 2>/dev/null || true
 fi
@@ -57,7 +58,9 @@ done
 get() { sed -n "s/^$1='\(.*\)'$/\1/p" "$STATE" 2>/dev/null | head -1; }
 
 line "recycle detection"
-if [ -f "$STATE" ]; then
+if [ -z "$PREFIX" ]; then
+  echo "no project identity — initialize: bash $SCRIPT_DIR/zk-init <name> (state checks skipped)"
+elif [ -f "$STATE" ]; then
   S_COMMIT="$(get last_commit)"; S_BRANCH="$(get branch)"
   S_TS="$(get ts)"; S_PUSHED="$(get pushed)"
   CUR="$(git -C "$PROJ" rev-parse HEAD 2>/dev/null || echo none)"
@@ -84,6 +87,14 @@ else
 fi
 if [ -f "$SYNC/repo.tar" ]; then
   echo "repo.tar: $(stat -c '%s bytes, modified %y' "$SYNC/repo.tar" 2>/dev/null | cut -c1-58)"
+  # UA-1 finding: a repo.tar with NO state for THIS project was written by a
+  # DIFFERENT project's zsave — the classic wrong-project boot-restore trap.
+  # Prefix-scoped check only (no account scan — kits mind their own business).
+  if [ ! -f "$STATE" ]; then
+    echo "[warn] repo.tar present but no ${PREFIX}-state.env for THIS project — that tar"
+    echo "  belongs to a DIFFERENT project's zsave; a boot restore would bring back the"
+    echo "  WRONG project. Recover from YOUR remote/snapshots and ignore that tar."
+  fi
 else
   echo "repo.tar: absent (platform writes it on graceful shutdown; zsave refreshes it sooner)"
 fi
@@ -175,13 +186,19 @@ else
 fi
 
 line "kit & config"
-# kit v4.0 zero-install model: ONE canonical package per account + a tiny
+# kit v4.1 zero-install model: ONE canonical package per account + a tiny
 # per-project config (.agents/config — the .env pattern). No per-project
 # kit copies exist; v3 leftovers are reported, not migrated silently.
 if [ -f "$USK/z-container-kit/SKILL.md" ]; then
   echo "canonical kit: $USK/z-container-kit (v$(sed -n 's/^  version: "\(.*\)"/\1/p' "$USK/z-container-kit/SKILL.md" 2>/dev/null | head -1))"
+elif [ -f "$SCRIPT_DIR/../SKILL.md" ]; then
+  # UA-2/3/4 finding: running from a kit checkout with an overridden ZK_USK used
+  # to print "MISSING: canonical kit" + clone advice — misleading. A checkout IS
+  # a fully working kit (zero-install: helpers run from anywhere).
+  echo "kit in use: $(cd "$SCRIPT_DIR/.." && pwd) (v$(sed -n 's/^  version: "\(.*\)"/\1/p' "$SCRIPT_DIR/../SKILL.md" 2>/dev/null | head -1)) — checkout/clone mode"
+  echo "  (no canonical package at $USK/z-container-kit — normal when ZK_USK is overridden or running straight from a clone)"
 else
-  echo "MISSING: canonical kit $USK/z-container-kit"
+  echo "MISSING: no canonical kit at $USK/z-container-kit and no kit checkout in use"
   echo "  bootstrap: git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit"
 fi
 if [ -f "$USK/z-container.zip" ]; then
@@ -194,32 +211,16 @@ if [ -n "$PREFIX" ]; then
 else
   echo "project config: MISSING — initialize: bash $SCRIPT_DIR/zk-init <name>"
 fi
-# shared-artifact prefixes: INFO only — on a multi-repo account these are
-# ambiguous evidence, never identity (the zk-onboard-test lesson)
-FOUND=""
-[ -f "$SCRIPT_DIR/resolve-prefix.sh" ] && FOUND="$(_zk_found_prefixes 2>/dev/null || true)"
-[ -n "$(printf '%s' "$FOUND" | tr -d ' ')" ] && echo "account prefixes (shared artifacts — pick yours, never adopt blindly):$FOUND"
-# v3 kit leftovers (harmless: v4 helpers never read them)
+# old-kit leftovers in THIS project only (harmless: v4 helpers never read them)
 V3LEFT=""
 for p in SKILL.md reference.md README.md scripts kb evidence; do
   [ -e "$PROJ/.agents/$p" ] && V3LEFT="$V3LEFT .agents/$p"
 done
 [ -e "$PROJ/skills/z-container" ] && V3LEFT="$V3LEFT skills/z-container"
+[ -e "$PROJ/z-container-kit" ] && V3LEFT="$V3LEFT z-container-kit(v2 copy)"
 if [ -n "$V3LEFT" ]; then
-  echo "v3 kit leftovers (harmless; strip with: bash $SCRIPT_DIR/zk-init --migrate-v3):$V3LEFT"
+  echo "old kit leftovers (harmless; strip with: bash $SCRIPT_DIR/zk-init --migrate-v3):$V3LEFT"
 fi
-# multi-kit registry: every other skill dir under /home/user_skills
-for d in "$USK"/*/; do
-  [ -d "$d" ] || continue
-  n="$(basename "$d")"
-  [ "$n" = "z-container-kit" ] && continue
-  [ -f "$d/SKILL.md" ] || continue
-  v="$(sed -n 's/^  version: "\(.*\)"/\1/p' "$d/SKILL.md" 2>/dev/null | head -1)"
-  echo "kit: $n${v:+ (v$v)}"
-done
-for legacy in "$PROJ/z-container-kit" "$SYNC/z-container-kit"; do
-  [ -e "$legacy" ] && echo "legacy v2 kit copy still present (remove manually): $legacy"
-done
 
 line "services"
 if ss -tln 2>/dev/null | grep -qE ':(3000|3001)\b'; then
@@ -265,13 +266,15 @@ if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origi
     echo "     ^ multiple credential files = multiple projects on this account —"
     echo "     pick THIS session's project by its prefix (filename before -remote.url)"
   fi
-  echo "  2. git -C $PROJ remote add origin \"\$(cat <your-credential-file>)\""
+  echo "  2. git -C $PROJ remote add origin \"\$(cat <your-credential-file>)\"   # empty dir? git -C $PROJ init -b main first"
   echo "     git -C $PROJ fetch origin"
   echo "     git -C $PROJ log origin/main --oneline -5 | sed -E 's|(ghp_[A-Za-z0-9]+)|(***PAT***)|g'   # SANITY CHECK before reset (F18)"
   echo "     git -C $PROJ reset --hard origin/main   # empty remote? skip"
   echo "  3. project identity comes back WITH the repo (.agents/config is committed):"
-  echo "     source $PROJ/.agents/config && echo \$ZK_PREFIX   # verify — if absent:"
+  echo "     source $PROJ/.agents/config && echo \$ZK_PREFIX   # verify — if absent (NEW project, not a recovery):"
   echo "     bash ${KITSRC:-/tmp/my-project/kit}/scripts/zk-init <name>"
+  echo "     RECOVERY: never invent a name — REUSE the prefix from the credential"
+  echo "     filename you wired in step 2 (the part before -remote.url)"
   echo "  4. bash ${KITSRC:-/tmp/my-project/kit}/scripts/zsave 'fresh-chat bootstrap checkpoint'"
   echo
 fi
@@ -293,7 +296,7 @@ if [ "$COLD" != 1 ] && ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; t
   fi
 fi
 if [ -z "$PREFIX" ] && [ "$COLD" != 1 ]; then
-  rec "no project identity — initialize: bash $SCRIPT_DIR/zk-init <name>  (or source an existing .agents/config)"
+  rec "no project identity — initialize: bash $SCRIPT_DIR/zk-init <name>  (NEW project; in a RECOVERY reuse the credential-file prefix, never invent one)"
 fi
 if [ -n "$(git -C "$PROJ" status --porcelain 2>/dev/null)" ]; then
   rec "dirty tree — checkpoint: bash $SCRIPT_DIR/zsave 'session-start checkpoint' (commits ALL current state incl. .env)"

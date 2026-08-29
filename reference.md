@@ -209,8 +209,9 @@ unknown; ossfs df shows 16E (unlimited-looking) — actual bucket quota unknown.
   per-account copy or the public clone URL), remote recovery (EVERY
   credential file listed with masked URLs — multi-repo aware), fetch+reset
   (config comes back with the repo), identity verify (zk-init hint), first
-  zsave. v4: kit & config registry section (canonical kit version, project
-  config, account prefixes as info-only, v3 leftovers, other kits).
+  zsave. v4.1 kit & config section: canonical kit version, portable zip,
+  project config, old-kit leftovers in THIS project — nothing else (kits are
+  self-contained; no account-wide prefix scan, no other-kit inventory).
 - `daemonize.py`: double-fork + setsid + stdio to --log (or /dev/null) +
   `--cwd` + execvp. Reparented to PID 1; survives all toolcalls; dies on
   recycle.
@@ -429,6 +430,27 @@ through v3.1.5 and this round's own py_compile staged two more; all four are
 now removed and a real .gitignore (__pycache__/, *.pyc) added. Net effect:
 zero net-new directives lost (worktree isolation, zsave ownership, lockout
 delegation, recovery, validation loop all survive).
+
+**v4.1.0 (2026-08-29, simplification round — "identity is configuration"):**
+owner redirect after v4.0.0: v4.0 kept legacy-config globbing and
+origin-URL-derivation tiers "with conflict checks", which just rebuilt the
+discovery machinery the redesign was supposed to delete ("i just asked for
+some configuration, why you now found another place to over-engineer this
+with a scan tool???"). v4.1 deletes it: `resolve-prefix.sh` (176 → 58
+lines) reads exactly TWO sources — `ZK_PREFIX` env > `$PROJ/.agents/config`
+— and fails loudly with the zk-init recipe otherwise; no artifact scanning,
+no URL guessing, `_zk_found_prefixes` removed entirely. Same change in the
+python helpers (`doppler_fetch.py`, `verify_access.py` lose the
+`*-config.env` glob tier). Kits are self-contained: zsession drops the
+other-kit registry and the account-wide prefix listing (reports THIS kit +
+THIS project + this project's own old-kit leftovers only). Validated by
+scratch regression suite + fresh-context sub-agent usability rounds
+(daily save / cold start / new project / misconfig guard: 4/4 end-to-end
+success, 0 blocked; all friction findings fixed in the same round —
+zsession kit-checkout line instead of misleading "MISSING canonical kit",
+wrong-repo.tar boot-restore warning (prefix-scoped, no account scan),
+recovery-prefix wording, zsave target line + flock retry hint, overrides
+reframed from "testing-only" to the general multi-project mechanism).
 
 **v4.0.0 (2026-08-29, zero-install redesign):** the multi-kit / multi-repo
 round. Owner review: the kit "was designed in a naive, center of the world,
