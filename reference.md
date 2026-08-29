@@ -220,16 +220,23 @@ unknown; ossfs df shows 16E (unlimited-looking) — actual bucket quota unknown.
   Self-install-aware, atomic copy-then-swap, 0644 mode normalization,
   version-skew note, nonzero exit on failure.
 
-## 11. Sub-agent playbook (for the agent reading this)
+## 11. Sub-agent playbook (container deltas)
 
-- Task-tool sub-agents: independent tool sessions (lockout isolation) but the
-  SAME container (same watchdog prelude, same overlay). Give each: its own
-  worktree or scratch dir under `/tmp/my-project/`, a fully self-contained
-  prompt (they see nothing of your context), explicit hazard warnings (never
-  loop caddy cmds / never curl-loop 12600|19001|19005|19006 / one probe per
-  toolcall), their Task ID, and the worklog protocol.
-- Worklog: `/home/z/my-project/worklog.md`, append-only, sections starting
-  `---`, each with Task ID / Agent / Task / Work Log / Stage Summary.
+Prompt construction — self-contained stateless prompts, Task IDs, the
+worklog read/append protocol — is preset-provided and deliberately not
+restated here (v3.1.6 dedup; the boundary is documented in
+`kb/sub-agents.md`). What THIS container adds:
+
+- Task-tool sub-agents get independent tool sessions (lockout isolation)
+  but the SAME container (same watchdog prelude, same overlay). Give each
+  its own worktree or scratch dir under `/tmp/my-project/`.
+- Embed the hazard warnings in their prompt — they will not know them
+  otherwise: never loop caddy cmds, never curl-loop 12600|19001|19005|19006,
+  one probe per toolcall.
+- Sub-agents MUST NOT run zsave; the coordinating agent owns all saves
+  (per-container lock; repo.tar corruption otherwise).
+- Worklog deltas only: zsave commits it (cross-chat survival); if missing,
+  recover from git history instead of starting blank.
 - After any sub-agent round: review their findings, fix the kit, re-run
   reviews until clean (this kit itself was validated through such rounds —
   see §13).
@@ -391,3 +398,27 @@ in install.sh and zsave use --git-common-dir so linked worktrees honor them
 (F5); doppler_fetch.py and verify_access.py honor ZK_USK/ZK_PROJ overrides
 (F4); the duplicated parallel-sessions header is deduped (F7); README version
 note un-skewed and its PAT "step 2" off-by-one fixed.
+
+**v3.1.6 (2026-08-29, preset-dedup round):** the sub-agent docs were audited
+against the default environment preset and slimmed to net-new-only directives
+(owner review: the kit should "only provide net-new skill directives not
+otherwise provided to agents by the default environment preset"). The audit
+found kb/sub-agents.md ~60% duplicated — its "The worklog protocol" section
+restated the preset's worklog rules nearly verbatim (path, append-only,
+read-before/append-after, the `---` template) and one bullet restated the
+Task-ID assignment rules. The module now opens with an explicit preset
+boundary ("if a directive here stops being net-new, cut it") and keeps only
+the container deltas: worklog committed-by-zsave + git-history recovery +
+conciseness; shared-container watchdog/overlay isolation via worktrees; the
+zsave-ownership rule; lockout-isolation delegation with the hazard warnings
+to embed in sub-agent prompts. reference.md §11 was rewritten the same way
+(retitled "container deltas"); SKILL.md's Sub-agents section gained the same
+boundary note; the worklog-template pointers in SKILL.md step 3, the kb
+index, and zsession's "create worklog" rec now cite the preset protocol
+instead of claiming the template lives in the kit. Also fixed a live-recurring
+gap this round exposed: v3.1.5's fix-round commit message claimed "__pycache__
+removal + .gitignore" but shipped neither — two .pyc files stayed tracked
+through v3.1.5 and this round's own py_compile staged two more; all four are
+now removed and a real .gitignore (__pycache__/, *.pyc) added. Net effect:
+zero net-new directives lost (worktree isolation, zsave ownership, lockout
+delegation, recovery, validation loop all survive).

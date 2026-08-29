@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install.sh — instantiate the z-container kit into your repo at .agents/
-# (kit v3.1.5)
+# (kit v3.1.6)
 #
 # Usage:
 #   bash /home/user_skills/z-container-kit/scripts/install.sh   # normal upgrade
