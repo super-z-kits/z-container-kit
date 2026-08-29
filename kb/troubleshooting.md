@@ -24,7 +24,8 @@ Bad PAT: rotate at github.com/settings/tokens, then
 again (script output is PAT-masked either way). Repo renamed (pushes keep
 working via GitHub redirects, but keep it clean): `git remote set-url origin
 https://<PAT>@github.com/<u>/<NEW-NAME>.git` — the next successful zsave
-refreshes both `${ZK_PREFIX}-remote.url` credential files automatically.
+refreshes the `${ZK_PREFIX}-remote.url` credential file (in `/home/user_skills/`)
+automatically.
 
 **"Dirty tree right after boot — mode-only changes (0644 → 0755)"** — the
 platform's repo.tar extraction does not preserve file modes; every file

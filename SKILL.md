@@ -2,7 +2,7 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "3.1.2"
+  version: "3.1.3"
   verified: "2026-08-29 (live experiments + 11 validation rounds; see evidence/EXPERIMENTS.md)"
   description: >
     Survival guide for the sandbox container. The kit is instantiated into

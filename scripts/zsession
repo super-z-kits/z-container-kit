@@ -237,7 +237,9 @@ if [ "$LIVE" = 1 ] && [ ! -f "$STATE" ] && ! git -C "$PROJ" remote get-url origi
   else
     echo "  1. git -C $PROJ remote add origin https://<PAT>@github.com/<user>/<repo>.git  # ask the user if no PAT"
   fi
-  echo "  2. git -C $PROJ fetch && git -C $PROJ reset --hard origin/main   # empty remote? skip"
+  echo "  2. git -C $PROJ fetch origin"
+  echo "     git -C $PROJ log origin/main --oneline -5   # SANITY CHECK before reset (F18)"
+  echo "     git -C $PROJ reset --hard origin/main   # empty remote? skip"
   if [ -n "$KITSRC" ]; then
     echo "  3. bash $KITSRC/scripts/install.sh   # LOAD-BEARING: restores skills/ + helpers"
   else
