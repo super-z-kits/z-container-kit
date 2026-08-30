@@ -112,7 +112,16 @@ default set on what is really a multi-repo account).
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides for safe scratch testing.
-- Version 5.2.0 — provenance and validation history in `reference.md` §13
+- Version 5.3.0 — provenance and validation history in `reference.md` §13
+  (v5.2 entry appended). v5.3: knowledge-first restructure — the doc now
+  introduces itself as tool-neutral know-how (laws + gotchas first), a
+  "minimal path" section inlines what zsave does for agents that skip the
+  helper flow, the sticky todo and laws 1/3 de-mandated; round-2 trim via
+  masked-recitation drop tests (weak-model filter + strong sub-agent
+  escalation) cut 7 command blocks agents recite from context; 28,903 →
+  26,985 bytes (under the 27,000 Read-tool truncation threshold), 509 → 484
+  lines, zero information loss (sub-agent audited); usability-validated
+  both full-adopt and scripts-forbidden (knowledge-only) runs, both PASS.
   (v5.1 entry appended). v5.1: credential files deleted (the remote travels
   with the repo), script existence audit (12 → 6; zdoppler-smoke moved to
   secrets-vault-kit), account-default bootstrap, one unified session flow.
