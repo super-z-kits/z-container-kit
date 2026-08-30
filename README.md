@@ -80,7 +80,7 @@ once (step 1); every helper masks it in all subsequent output (rotate at
 github.com/settings/tokens anytime if concerned).
 
 Then run `bash /home/user_skills/z-container-kit/scripts/zsession` (situation
-report) and read `SKILL.md` — the "New session — MUST READ" section comes
+report) and read `SKILL.md` — the "Session start — MUST READ" section comes
 first.
 
 Shortcut: a single-project account can skip the PAT handover entirely —
@@ -112,7 +112,11 @@ default set on what is really a multi-repo account).
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides for safe scratch testing.
-- Version 5.1.0 — provenance and validation history in `reference.md` §13
+- Version 5.2.0 — provenance and validation history in `reference.md` §13
   (v5.1 entry appended). v5.1: credential files deleted (the remote travels
   with the repo), script existence audit (12 → 6; zdoppler-smoke moved to
   secrets-vault-kit), account-default bootstrap, one unified session flow.
+  v5.2: SKILL.md fat-cut (688 → 509 lines, zero information loss —
+  inventorized line-by-line, sub-agent-reviewed drop/keep/condense,
+  over-teaching resolved by experiment; kb/doppler-token-seed.md absorbed
+  the detection sweep).
