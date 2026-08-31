@@ -79,6 +79,23 @@ Single-project account: `zk-init --set-default` afterwards so future fresh
 chats are zero-input. `ZK_PREFIX` rules: lowercase `[a-z0-9-]`, ≤24 chars,
 unique among the account's parallel projects.
 
+## Git identity: fetching the exact noreply email (law 11)
+
+zsession flags the boot placeholder (`Z User <z@container>`) and prints the
+fix shape. To get the exact `<id>+<username>@users.noreply.github.com`
+without visiting GitHub settings, ask the API with the same PAT you wired
+into origin (never echoes the token):
+
+```bash
+GH_PAT=$(sed -E 's#https://([^@]+)@github.com/.*/.git#\1#' <<<"$(git config --get remote.origin.url)")
+curl -sS -H "Authorization: Bearer $GH_PAT" https://api.github.com/user \
+  | jq -r '"git config user.name \(.login) && git config user.email \(.id)+\(.login)@users.noreply.github.com"'
+```
+
+Run the printed command verbatim. A repo with an established working
+identity (check `git log --format='%an <%ae>' -3`) can simply reuse it —
+the noreply form matters only where Vercel deploys read the commit author.
+
 ## Why identity is configuration, never discovery
 
 `ZK_PREFIX` resolves from exactly TWO sources (resolve-prefix.sh):
