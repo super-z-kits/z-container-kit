@@ -2,8 +2,8 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "5.4.0"
-  verified: "2026-08-31 (round 16: single-Read rendered-char budget, cold-start wiring fix; see evidence/EXPERIMENTS.md)"
+  version: "5.5.0"
+  verified: "2026-09-09 (v5.5.0: + long-running-mode/cron deep dive — new kb/long-running-cron.md + SKILL snippet, verified live via experiments A/B). 2026-08-31 (v5.4.0: round 16 single-Read rendered-char budget, cold-start wiring fix; see evidence/EXPERIMENTS.md)"
   description: >
     Survival guide for the sandbox container: environment gotchas and
     laws, all tool-neutral (plain git/tar/terminal) — the Git HEAD
@@ -17,7 +17,8 @@ metadata:
     no-script minimal path is inlined. Load BEFORE any git operation,
     before any "save my work" decision, before starting any background
     process, when troubleshooting "my project reset itself", and at every
-    session start.
+    session start. Also load before scheduling a recurring self-prompt or using
+    the long-running-mode `cron` tool (see kb/long-running-cron.md).
 ---
 
 # Z-Container Survival Guide
@@ -312,6 +313,46 @@ method-matrix or path-enumerate internal ports; stop immediately at any "broken 
 - Sub-agents leave saving to the coordinating agent — one writer, no interleaving with the coordinator's git
   work. Pushing from a worktree is always fine. (Deep dive: `kb/sub-agents.md`.)
 
+## Long-running mode & the cron tool
+
+When **long-running tasks** mode is on, the platform injects a `cron` tool so a
+session can schedule its own future re-prompts (and the platform schedules isolated
+reviewer runs after web-dev). Verified live 2026-09-09 — full deep dive:
+`kb/long-running-cron.md`.
+
+**The tool** (`create`/`list`/`get`/`delete`): `schedule.kind` ∈
+`{cron, fixed_rate, one_time}` (cron = 6-field expr; fixed_rate = **seconds** string;
+one_time = epoch-ms or `yyyy-MM-dd HH:mm:ss` in `schedule.tz`); `payload.kind` ∈
+`{agentTurn, webDevReview}`; `payload.message` = arbitrary text (the re-prompt body);
+`params.priority` ∈ {1,5,10,15} (captured but not wired). **Always set `schedule.tz`
+explicitly.**
+
+**`agentTurn` vs `webDevReview`** — the one distinction that matters: `agentTurn`
+re-prompts the SAME live session with YOUR custom message (verbatim); `webDevReview`
+runs an ISOLATED reviewer with a platform template (NOT customizable — the "generic
+message" experience is this path by design). Custom recurring prompt →
+`agentTurn`+`fixed_rate`+your message. Autonomous dev loop → `webDevReview`
+(platform-blessed, every 15 min post-web-dev).
+
+**Five gotchas that will bite you [V]:**
+1. **The `cron` tool is STRIPPED in cron-fired rounds** (trace suffixed
+   `-cron-agent-loop`). A recurring cron CANNOT self-delete from its own fired round
+   — stop it from a user round (`cron delete jobId=<id>`). The moment you arm a
+   recurring job, write its delete line into `worklog.md`.
+2. **Fire #1 of a `fixed_rate` is IMMEDIATE** (~1 s after create). Fire #2 lands at
+   creation+2×interval; fire #3+ on the interval grid. (300 s → t≈0, 600 s, 900 s, …)
+3. **A fire spawns a PARALLEL turn** on the same container — it does NOT queue behind
+   an active user round. Same-file write races are real: re-read before writing, keep
+   fired-round writes append-only, push promptly (zsave's lock serializes commits).
+4. **one_time jobs auto-purge** after firing (no lingering disabled record).
+5. **Send manual messages OUTSIDE fire windows** — a fire claims the turn and strips
+   cron tooling; your message may be handled by a cron-wise tool-less turn.
+
+**Mode-gate [V]:** the `cron` tool is injected ONLY in long-running mode (A/B
+confirmed: a non-long-running session has 15 tools, no `cron`, yet the doctrine is
+still in the prompt). The gate is at tool-injection level. No in-container doctrine
+exists — the system-prompt rule IS the doc; the machinery is platform-side.
+
 ## Persistence map
 
 | Location | Storage | Survives toolcalls | Survives recycle (scale-to-zero) | Survives force-kill | Survives NEW chat |
@@ -378,6 +419,7 @@ spawn glue). `.agents/config` is the ONLY per-project kit artifact.
 - `kb/dev-server-database.md` — :3000 dev server, Prisma + SQLite detail
 - `kb/secrets-audits.md` — audit callouts for the secrets posture
 - `kb/sub-agents.md` — sub-agent deltas: shared-container isolation, save ownership, worklog commit/recovery
+- `kb/long-running-cron.md` — the `cron` tool, agentTurn vs webDevReview, fired-round tool strip, concurrent turns, interval model, backend internals (verified live)
 - `kb/terminal-lockout.md` — the irreversible caddy/port-loop 403 hazard (deep dive)
 - `kb/troubleshooting.md` — debugging trees for common symptoms
 - `kb/helpers-audits.md` — per-helper audit callouts

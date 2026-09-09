@@ -112,6 +112,12 @@ default set on what is really a multi-repo account).
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides for safe scratch testing.
+- Version 5.5.0 — long-running-mode/cron deep dive: new `kb/long-running-cron.md`
+  (verified live via experiments A/B across user-driven + cron-fired rounds) + a brief
+  `SKILL.md` section (the `cron` tool surface, `agentTurn` vs `webDevReview`, and five
+  operational gotchas: fired-round tool strip, immediate first fire, concurrent turns,
+  one_time auto-purge, fire-window messaging). v5.4.0: single-Read rendered-char budget +
+  cold-start wiring fix.
 - Version 5.3.0 — provenance and validation history in `reference.md` §13
   (v5.2 entry appended). v5.3: knowledge-first restructure — the doc now
   introduces itself as tool-neutral know-how (laws + gotchas first), a
