@@ -51,3 +51,40 @@ Advanced (know they exist, avoid making them habits):
   # then diff/copy anything you need back from <wt>.orphaned
   ```
   Sub-agents should each get their own worktree.
+
+## Switch signatures (git 2.47.3) [V]
+
+- Plain `git switch main` (or `git checkout main`) while ALREADY on main — in
+  any state (clean / stale-index / dirty): writes a `main→main` reflog entry +
+  HEAD inode rename + index rewrite. Harmless; dirty edits and untracked files
+  preserved. This explains "mystery" main→main entries in your reflog — check
+  the actor by parent cmdline (agent chains: `/bin/bash --noprofile --norc`;
+  the prelude: plain `/bin/bash` under `su`). The prelude itself NEVER runs the
+  switch on main.
+- `git switch -f main` with a dirty TRACKED file: DISCARDS the uncommitted
+  edits (untracked still spared). Never force-switch with dirty tracked work.
+- The platform prelude uses a PLAIN switch — uncommitted tracked edits on a
+  side branch are protected by the dirty shield (above).
+
+## The absorption lifecycle (arming) [V — mechanism reproduced
+experimentally (T2-d sandbox); the platform's dirty-tree firing is [S], not
+yet observed]
+
+At the first GRACEFUL recycle, the pre-stop `git add -A` (when it fires —
+kb/repo-tar-mechanics.md; conditional on a dirty tree) absorbs your
+untracked-but-not-gitignored directories into history; the boot restore brings
+them back TRACKED on main. From that moment:
+
+- still watchdog-safe while you stay on main (report-only prelude, zero
+  writes),
+- but any future off-main excursion silently REVERTS them to the absorbed
+  snapshot — they changed from "untracked = categorically unreachable" to
+  "tracked = conditional",
+- and the panic-command hazard flips from `git clean -fd` (kills untracked)
+  to `git reset --hard` (kills tracked-modified).
+
+So "outside the blast radius" is a git-state × lifecycle property, not a path
+property. Prefer COMMITTED state for anything precious (refs survive every
+watchdog behavior); keep scratch data untracked deliberately. Note `upload/`
+and `tool-results/` are NOT in the platform's stock .gitignore — seed
+`.git/info/exclude` (zsave does) or they ride every commit and push.

@@ -78,10 +78,12 @@ Model (all points verified live or re-verified independently):
   observed from within a sub-agent session (the round-1 audit agent watched
   the prelude fire for its own toolcalls, including a Write that failed path
   validation). Not time-based; nothing happens while the session is idle.
-- Actor: `git switch main` run as user z, cwd `/home/z/my-project`, spawned as
-  a child of a prelude chain `/bin/sh -c su z -c /bin/bash` that the bridge
-  starts ~200–500 ms before the toolcall's command chain
-  (`/bin/bash --noprofile --norc`).
+- Actor: the ZAI bridge (`/app/.venv/bin/python3 main.py`, root) spawns a
+  TWO-chain prelude as user z in `/home/z/my-project` ~100–350 ms before the
+  toolcall's command chain (`/bin/bash --noprofile --norc`): a report chain
+  (`git branch --show-current`) before EVERY toolcall, and — only when the
+  report ≠ main — a second, fresh switch chain (`git switch main 2>&1`).
+  Scripts verbatim: kb/watchdog-forensic.md.
 - Write mechanism: real git (lockfile create/write/rename; new inode per
   reset; file mode 664, owner z:z).
 - Semantics = `git switch main`, exactly:
@@ -92,8 +94,8 @@ Model (all points verified live or re-verified independently):
 - Scope: ONLY the repo at `/home/z/my-project` (resolved through a `.git`
   pointer file too). Other repos anywhere else: untouched. Linked worktrees:
   untouched.
-- The watchdog itself commits nothing; UUID-message commits come from the
-  platform's own git add -A at recycle/pre-stop (not observed mid-session).
+- The watchdog itself commits nothing; the platform's pre-stop `git add -A`
+  commit is CONDITIONAL and its UUID message is [I] (kb/repo-tar-mechanics.md).
 
 Why it exists (inferred): the platform wants the workspace on a stable branch
 so its `git add -A` snapshot commits land linearly on main. Do not fight it —
@@ -124,9 +126,10 @@ unknown; ossfs df shows 16E (unlimited-looking) — actual bucket quota unknown.
 
 ## 6. repo.tar lifecycle
 
-- Graceful shutdown → platform `git add -A && git commit` (UUID message) →
-  tar `/home/z/my-project` → `/home/sync/repo.tar` **[S+I: archiver itself is
-  outside the container; its exact exclusions are unknown]**.
+- Graceful shutdown → platform git FIRST (`add -A` + commit, CONDITIONAL —
+  no commit on a clean tree, observed 2026-09-28) → then tar →
+  `/home/sync/repo.tar`. The pre-stop tar carries exactly the tracked set +
+  `.git` (skills/ excluded) **[S+V — kb/repo-tar-mechanics.md]**.
 - Force-kill / crash → nothing written; next boot restores the LAST repo.tar
   that exists — which may be minutes or days stale, or (fresh chat) absent.
 - Boot restore semantics [S]: full wipe + extract (see §3.2) — stale files do
@@ -282,10 +285,14 @@ restated here (v3.1.6 dedup; the boundary is documented in
 
 ## 12. Open questions (unverified today)
 
-- Exact scoping (per-chat vs per-user) of /home/sync, /tmp/my-project,
-  /home/user_skills — strong inference, no proof. Test across chats only.
-- Pre-stop archiver's exclusions (does it tar node_modules?).
-- Runtime git_commit trigger conditions (only pre-stop observed).
+- Exact scoping of /home/sync, /tmp/my-project, /home/user_skills — per-chat
+  vs per-USER now OBSERVED across a real 19-day recycle (kb/persistence-
+  namespaces.md); the per-chat NEW-chat boundary remains inference.
+- Pre-stop archiver's exclusions — ANSWERED 2026-09-28 (tracked set + .git;
+  skills/ excluded; kb/repo-tar-mechanics.md).
+- Runtime git_commit trigger conditions — ANSWERED in part: pre-stop,
+  git-before-tar, conditional on a dirty tree; the dirty-tree firing itself
+  remains unobserved.
 - Whether custom skills in `skills/` are auto-loaded by the skill system in
   coding sessions (stages.yaml gates official zips at extract; discovery of
   custom dirs unconfirmed) — if not auto-loaded, the kit is still fully

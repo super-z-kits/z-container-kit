@@ -30,11 +30,13 @@ exists (`zk-default.env`), refresh it too:
 `.git/config` and travels with the repo).
 
 **"Dirty tree right after boot — mode-only changes (0644 → 0755)"** — the
-platform's repo.tar extraction does not preserve file modes; every file
-lands executable and git flags many files "modified" with zero content
+boot restore path runs `chmod -R 755` over the whole re-extracted tree
+(start.sh:104–111); the tar itself preserves modes fine. Every file lands
+executable and git flags many files "modified" with zero content
 diff (`git diff` empty). Fix once per workspace (the setting persists via
 repo.tar): `git -C /home/z/my-project config core.fileMode false`. Nothing
-was actually changed — status goes clean immediately.
+was actually changed — status goes clean immediately. NEVER commit the
+mode noise.
 
 **"Dev server dead"** — `ss -tln | grep 3000`; if gone, relaunch via
 daemonize.py (recipe above). If :3000 is up but preview 5xx's, check dev.log.

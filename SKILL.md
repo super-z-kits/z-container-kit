@@ -2,12 +2,13 @@
 name: z-container
 metadata:
   author: z + Super Z forensic session
-  version: "5.5.0"
-  verified: "2026-09-09 (v5.5.0: + long-running-mode/cron deep dive — new kb/long-running-cron.md + SKILL snippet, verified live via experiments A/B). 2026-08-31 (v5.4.0: round 16 single-Read rendered-char budget, cold-start wiring fix; see evidence/EXPERIMENTS.md)"
+  version: "5.6.0"
+  verified: "2026-09-28 (v5.6.0: watchdog model completed — two-chain bridge-side prelude, scripts recovered byte-exact via same-uid mem-scan + git-shim; real 19-day recycle forensics — mode-755 restore law, conditional pre-stop commit, /tmp/my-project platform snapshot; platform drift audit — see evidence/EXPERIMENTS.md E15–E17). 2026-09-09 (v5.5.0: + long-running-mode/cron deep dive — new kb/long-running-cron.md + SKILL snippet, verified live via experiments A/B). 2026-08-31 (v5.4.0: round 16 single-Read rendered-char budget, cold-start wiring fix; see evidence/EXPERIMENTS.md)"
   description: >
     Survival guide for the sandbox container: environment gotchas and
     laws, all tool-neutral (plain git/tar/terminal) — the Git HEAD
-    watchdog (a `git switch main` prelude before EVERY toolcall), the
+    watchdog (a bridge-side two-chain prelude before EVERY toolcall: branch
+    report + conditional `git switch main`), the
     persistence model (overlay vs PolarFS vs ossfs vs github; repo.tar
     restore semantics), background-process survival (double-fork,
     mini-services, .zscripts/dev.sh), the irreversible terminal lockout,
@@ -41,6 +42,9 @@ git add -A && git commit -m "checkpoint" && git push origin HEAD:main   # the on
 tar -C /home/z/my-project --exclude=node_modules --exclude=.next -cf /home/sync/repo.tar .   # the force-kill layer
 ```
 
+First run in a repo: seed `.git/info/exclude` with `tool-results/`, `upload/`, `dev.log` (zsave does
+this for you — the platform's stock .gitignore does not).
+
 The rest of this doc — watchdog, persistence, lockouts, ports, secrets — binds you regardless of path.
 
 ## Session start — MUST READ, every session
@@ -59,7 +63,10 @@ path: the two-command loop above).
 
 **1. Know where you stand** (read-only): `git status`, `git remote` (names), recent log — or one report:
 `bash /home/user_skills/z-container-kit/scripts/zsession` (recycle detection, watchdog hygiene, kit & config
-status incl. the account default, recommended actions; follow its advice). Bare account, no kit:
+status incl. the account default, recommended actions; follow its advice). Mass mode-only ` M` lines
+(0644→0755 everywhere) = post-recycle fingerprint — the boot restore chmods the tree (start.sh
+`chmod -R 755`, NOT corruption); fix once `git config core.filemode false`, never commit that noise.
+Bare account, no kit:
 `git clone https://github.com/super-z-kits/z-container-kit.git /tmp/my-project/kit` — nothing to install.
 
 **2. Ensure identity + remote** — in this order:
@@ -103,8 +110,9 @@ then get to work.
 
 1. **Know where you stand before touching anything** — read-only: plain git (status, remote names, recent log)
    or `zsession` (step 1).
-2. **Work on `main` inside `/home/z/my-project`** (the pre-toolcall `git switch main` is a no-op on main, a
-   silent revert on any other branch — see the watchdog section).
+2. **Work on `main` inside `/home/z/my-project`** (on main the pre-toolcall prelude is a read-only branch
+   report — zero writes; on any other branch it silently switches back and reverts tracked files — see the
+   watchdog section).
 3. **Save at micro-milestone granularity — every save must reach github** (the only guaranteed cross-chat
    layer). One command: `zsave "msg"` = commit + push + `/home/sync` snapshot + `repo.tar` refresh; or the
    minimal path's two commands. **Never force push** (explicit user permission only) — local state can be
@@ -128,7 +136,9 @@ then get to work.
    a double-fork (daemonize.py — recipe below); don't wait for a recycle.
 9. **Track `.env` in git — git IS the disk here.** Do not print token values into chat/logs.
 10. **The watchdog never destroys commits or untracked files — panic "fixes" do.** Diagnose
-    (`git log --all --oneline`, `zsession`) before resetting anything.
+    (`git log --all --oneline`, `zsession`) before resetting anything. (Dirs absorbed by a
+    past recycle's pre-stop commit count as TRACKED — they revert off-main;
+    kb/watchdog-advanced.md.)
 11. **Set git identity before any commit.** Boot default is `Z User <z@container>` — Vercel blocks deploys
     from this identity. Set user.name + user.email to the GitHub noreply format
     (`<id>+<username>@users.noreply.github.com`); zsession detects and prints the fix.
@@ -172,12 +182,24 @@ z-container zip when missing.
 
 ## The Git HEAD watchdog — read before ANY git work
 
-**Mechanism [V]:** before EVERY toolcall (all types, incl. sub-agents'), the platform runs `git switch main`
-as user z in `/home/z/my-project`, ~200–500 ms before your command executes; never while idle.
+**Mechanism [V — prelude scripts recovered byte-exact 2026-09-28, two container generations]:** before
+EVERY toolcall (every observed type — Bash/Read/Write/LS/Grep/Glob/TodoWrite; bridge-level, so
+type-independent; incl. sub-agents' and toolcalls that go on to fail; N parallel calls = N serialized
+preludes; NEVER while idle), the root ZAI bridge spawns a two-chain prelude as user z in
+`/home/z/my-project`, ~100–350 ms before your command:
+
+1. **Report chain (every toolcall):** `export PATH=/home/z/.venv/bin:$PATH && cd /home/z/my-project && git
+   branch --show-current` + `echo "<<exit_code:$?>>"` — read-only; the bridge parses stdout as
+   `<branch>\n<<exit_code:N>>`.
+2. **Switch chain (only if the report ≠ main):** a second, fresh chain runs
+   `export PATH=/home/z/.venv/bin:$PATH && cd /home/z/my-project && git switch main 2>&1`.
+
+The conditional is BRIDGE-side (no in-script `if`); on main the prelude writes nothing — the reflog stays
+frozen across hundreds of toolcalls.
 
 | State at end of your toolcall | What the prelude does before your next command |
 |---|---|
-| on `main` | nothing — true no-op, no writes |
+| on `main` | report chain only — read-only, zero writes, zero reflog entries |
 | other branch, clean tree | full `git switch main`: HEAD -> main AND **working-tree files revert to main's content** |
 | other branch, uncommitted changes conflicting with main | switch **fails silently** — you stay on your branch ("dirty shield") |
 | other branch, non-conflicting uncommitted changes | switch succeeds; your edits carry over onto main |
@@ -219,10 +241,14 @@ top.
 ## repo.tar mechanics
 
 `/home/sync/repo.tar` is the artifact the platform restores at boot. Boot: if it exists, start.sh wipes
-`/home/z/my-project/*` (preserving `upload/`) and re-extracts it; else "clean project" path. Shutdown:
-archived on **graceful** shutdown only (plus a runtime UUID-message `git add -A` commit at pre-stop);
-force-kill skips both. zsave refreshes repo.tar so a force-killed container returns at your latest save, not a
-stale one. Full boot/shutdown source detail: `kb/repo-tar-mechanics.md`.
+`/home/z/my-project/*` (preserving `upload/`), re-extracts it, then **`chmod -R 755`s the whole restored
+tree** (start.sh:104–111) — expect a mass mode-only ` M` set in the first `git status` after any recycle;
+fix once with `git config core.filemode false`, never commit the noise. The platform's pre-stop tar
+excludes `skills/` (it returns via boot re-extraction). Shutdown: archived on **graceful** shutdown only —
+order is git-FIRST-then-tar; on a clean tree NO commit appears (verified across a real 19-day recycle
+[V]); the "UUID-message commit" is [I] (dirty-tree recycle not yet observed). Force-kill skips both. zsave
+refreshes repo.tar so a force-killed container returns at your latest save, not a stale one. Full detail:
+`kb/repo-tar-mechanics.md`.
 
 ## Restore procedures (when things went wrong)
 
@@ -365,6 +391,13 @@ exists — the system-prompt rule IS the doc; the machinery is platform-side.
 | `/tmp`, `/home/z/<other>`, `/var/tmp`, `/root` | overlay | yes | **no** | **no** | no |
 | github remote | external | n/a | yes | yes | yes |
 
+**Recycle fingerprints [V — real 19-day graceful recycle, 2026-09-09→09-28]:** restored tree all-755 modes
+(boot chmod); `.git` history+reflog restored verbatim; `/tmp/my-project` carries a PLATFORM snapshot of
+the tracked set (mirror + `.initial_snapshot.json` mtime manifest, taken at the session-idle/recycle
+boundary — not per-turn) used for top-dir metadata at restore. Read mounts by their TOPMOST layer
+(`df -T`, not `mount`'s first line) — `/home/sync` and `/tmp/my-project` sit on tmpfs bridges with
+ossfs/PolarFS on top.
+
 **Persistence radius:** precious things must be (a) inside my-project AND saved, OR (b) on `/home/sync` or
 `/tmp/my-project` (safe until THIS chat ends), OR (c) pushed to github (cross-chat guarantee) — a file in
 `/home/z` outside my-project is strictly worse. Detail: `kb/persistence-namespaces.md`.
@@ -410,10 +443,10 @@ spawn glue). `.agents/config` is the ONLY per-project kit artifact.
 - `kb/session-recovery.md` — session-start deep-dive: fresh-chat paths, remote wiring, branch-rename,
   pre-flight snapshot, first-time setup
 - `kb/zsave-internals.md` — full zsave pipeline with exclude rules
-- `kb/watchdog-advanced.md` — dirty shield, gitdir relocation, orphan recovery
-- `kb/watchdog-forensic.md` — forensic evidence for watchdog mechanics
-- `kb/persistence-namespaces.md` — per-chat vs per-user namespace inference
-- `kb/repo-tar-mechanics.md` — boot/shutdown semantics, .gitignore auto-heal
+- `kb/watchdog-advanced.md` — dirty shield, gitdir relocation, orphan recovery; switch signatures, absorption
+- `kb/watchdog-forensic.md` — complete model + verbatim prelude scripts + evidence + capture techniques
+- `kb/persistence-namespaces.md` — namespaces observed across a real recycle; mount-reading hazards
+- `kb/repo-tar-mechanics.md` — boot/shutdown semantics, chmod-755 restore law, conditional pre-stop commit
 - `kb/restore-procedures.md` — full A/B/C/D recovery flow
 - `kb/networking.md` — ports, Caddy, XTransformPort, egress detail
 - `kb/dev-server-database.md` — :3000 dev server, Prisma + SQLite detail

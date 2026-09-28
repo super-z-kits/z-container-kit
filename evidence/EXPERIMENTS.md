@@ -197,3 +197,52 @@ session, bare bootstrap repo (single "Initial commit", no remote).
   now observed live, not just inferred [V]; repo.tar is gzip-compressed
   (snapshots are plain tar) — raw-byte PAT scans of repo.tar see nothing,
   use tar -xOf [V].
+
+## E15 — Watchdog script recovery + model completion (2026-09-28, session 4)
+
+Fresh container (post-recycle, bridge PID 899). Two-chain bridge-side prelude
+proven BYTE-EXACT via same-uid /proc/PID/mem scans (105 catches, 150 Hz poller)
++ a transparent git-shim at the prelude PATH's user-writable prefix (33
+prelude-shaped catches — 30 guards + 2 switches + 1 mimic; transparency 7/7,
+removed after 2m42s). Verbatim scripts:
+report chain (every toolcall) `export PATH=/home/z/.venv/bin:$PATH && cd
+/home/z/my-project && git branch --show-current` + `echo "<<exit_code:$?>>"`;
+switch chain (only when report != main) `… && git switch main 2>&1`.
+Conditional is BRIDGE-side (in-script-conditional inference FALSIFIED — its
+fragments came from a mimic payload). TodoWrite covered (last untested type);
+failing toolcalls still get a prelude; N parallel calls = N serialized chains;
+timing mean 216.9 ms (213.3–222.9, n=8); report→switch spacing 205–209 ms.
+Raw evidence + instruments: research repo zai-watchdog-research-20260909
+(scratch/wdt6/, scratch/t5b/, reports T5-*, T6-*).
+
+## E16 — Real 19-day graceful recycle forensics (2026-09-09 → 2026-09-28)
+
+Graceful recycle PROVEN (pre-stop tar's .git member mtime = tar-creation
+second; no agent active). Pre-stop order git-BEFORE-tar; on the clean tree NO
+commit appeared (restored history + origin both end at the session's last
+commit) — the "UUID-message commit" is downgraded to [I]; dirty-tree recycle
+is the missing discriminator. Boot restore runs `chmod -R 755` over the whole
+tree (start.sh:104–111) — the tar itself preserves modes; hence the mass
+mode-only ` M` noise after every recycle (fix: `git config core.filemode
+false`, never commit the noise). — this corrects E14's attribution
+"tar extraction does not preserve modes": the [V] fact in E14 was the mode noise,
+not its cause (tar member census 2026-09-28: 644/664/775; the boot chmod is the
+normalizer). Platform pre-stop tar carried exactly the
+tracked set + .git (skills/ EXCLUDED — returns via boot re-extraction).
+/tmp/my-project holds a PLATFORM snapshot of the tracked set (mirror +
+.initial_snapshot.json mtime manifest, 43 keys == tracked set, written at the
+last-turn/idle boundary, NOT per-turn; used at restore for top-dir metadata).
+
+## E17 — Platform drift audit (2026-09-28, session 4)
+
+31-row drift table (research repo T6-c.md): 27 unchanged / 2 drifted / 4 new.
+init-fullstack.sh CHANGED on the CDN (sha 28a79658→b4e5e0d3, +84 lines): the
+dead-fallback bug documented 2026-09-09 was real and platform-fixed
+2026-09-23 ("BJ sandboxes 100% stuck" comment); still ZERO git/kill/app
+references — privilege-boundary argument re-holds (CDN mutability now
+empirically proven: hash-log any fetched script). Session-activation
+user-skill extraction absent this boot. NEW: bash-wrapper keyword filter
+(payloads naming the gateway binary are hard-blocked at the toolcall layer);
+/tmp/my-project top-dir mtime touched mid-session (namespace live).
+Egress IP, all tool versions, /start.sh, stages.yaml (15 stages, zero
+watchdog refs), process-tree structure, /app perms: unchanged.

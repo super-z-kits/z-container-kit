@@ -1,8 +1,8 @@
 # z-container-kit
 
-Survival kit for the the sandbox container ("z-container"): verified
-mechanics of the git HEAD watchdog (a `git switch main` prelude that runs
-before every toolcall), the persistence model (overlay vs PolarFS vs ossfs
+Survival kit for the sandbox container ("z-container"): verified
+mechanics of the git HEAD watchdog (a bridge-side two-chain prelude that runs
+before every toolcall: branch report + conditional `git switch main`), the persistence model (overlay vs PolarFS vs ossfs
 vs github; `repo.tar` restore semantics), background-process survival
 (double-fork daemons), the irreversible terminal-command lockout hazard,
 and the `zsave` / `zsession` helpers (six scripts — each earns its
@@ -112,6 +112,25 @@ default set on what is really a multi-repo account).
   embeds PATs, account names, or workspace repo URLs. All kit copies and
   the portable zip have passed full-text + git-object token scans.
 - Helpers honor `ZK_PROJ` / `ZK_SYNC` / `ZK_USK` env overrides for safe scratch testing.
+- Version 5.6.0 — watchdog model completed + real-recycle forensics: the prelude's two
+  scripts recovered byte-exact (same-uid /proc/PID/mem scan + transparent git-shim; E15)
+  — bridge-side two-chain design (branch report every toolcall, conditional `git switch
+  main` only off-main), which corrects the old in-script-conditional inference and adds
+  the `<<exit_code>>` output protocol, the PATH prefix, and TodoWrite/failing/parallel
+  toolcall coverage. A real 19-day graceful recycle (E16) delivered the mode-755 restore
+  law (boot `chmod -R 755` — fix `core.filemode false`, never commit the noise), the
+  conditional pre-stop commit (git-before-tar order, no commit on clean trees, "UUID
+  message" downgraded [I]), the skills/ exclusion from the platform tar, and the
+  /tmp/my-project platform-snapshot mechanism. Drift audit (E17): init-fullstack.sh
+  changed on the CDN (privilege boundary still holds), gateway-name bash filter found.
+  KB updates: watchdog-forensic (full model + evidence + capture techniques),
+  watchdog-advanced (switch signatures, absorption lifecycle), persistence-namespaces
+  (observed-upgrade + mount-reading hazards), repo-tar-mechanics, troubleshooting
+  (mode-law attribution fix), SKILL.md mechanism/persistence sections.
+  (known-stale: zsession's on-main message still names `git switch main` —
+  scripts frozen this release; on-main the prelude is report-only).
+  (known-stale: zsession's on-main message still names `git switch main` —
+  scripts frozen this release; on-main the prelude is report-only).
 - Version 5.5.0 — long-running-mode/cron deep dive: new `kb/long-running-cron.md`
   (verified live via experiments A/B across user-driven + cron-fired rounds) + a brief
   `SKILL.md` section (the `cron` tool surface, `agentTurn` vs `webDevReview`, and five

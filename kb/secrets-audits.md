@@ -33,6 +33,7 @@ Extracted from SKILL.md v2.3.3.
 - **UUID-message commits in `git log`** (audits F12, F15): the platform's
   pre-stop hook runs `git add -A` + commits with a UUID subject
   (`87b39f91-4b3e-45a9-...`). These appear in `git log` and on GitHub after
-  push. Don't try to filter or squash them — the next pre-stop will just
+  push. [I — subject text unverified; the commit itself is conditional,
+  kb/repo-tar-mechanics.md] Don't try to filter or squash them — the next pre-stop will just
   add another. For a clean log on a particular deliverable, use a worktree
   (worktrees are pre-stop-hook-free).
