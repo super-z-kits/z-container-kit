@@ -15,5 +15,9 @@ Egress, DNS, MTU, IPv6, preview-URL detail. Extracted from SKILL.md v2.3.3.
   do not touch). **[I/S]**
 - Egress fully open (github/npm/pypi reachable); no external IPv6; eth0 MTU 1450;
   DNS 100.100.2.136/138. **[V/I]**
+- api.github.com UNAUTHENTICATED from this sandbox family can return
+  **403** (shared egress IP rate limit; verified 2026-10-05 — the
+  connection itself completes, so it is NOT a block). Use authenticated
+  calls or a neutral host for egress tests. **[V]**
 - The public preview URL is not discoverable from inside the container — use the
   UI's preview panel. **[I]**

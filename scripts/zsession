@@ -134,7 +134,7 @@ if [ "$LIVE" = 1 ]; then
     echo "detached HEAD ($(git -C "$PROJ" rev-parse --short HEAD)) — the prelude will"
     echo "git-switch to main on the next toolcall. Note this SHA now if you need it."
   elif [ "$BR" = "main" ]; then
-    echo "on main — watchdog prelude (git switch main) is a no-op. Safe."
+    echo "on main — prelude is report-only (branch check, no switch). Safe."
   elif ! git -C "$PROJ" show-ref --verify --quiet refs/heads/main 2>/dev/null; then
     CURBR="$(git -C "$PROJ" branch --show-current 2>/dev/null || echo '?')"
     if [ -n "$CURBR" ] && [ "$CURBR" != "?" ]; then

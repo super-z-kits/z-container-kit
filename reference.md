@@ -4,6 +4,9 @@ Companion to `SKILL.md` (operational rules). This file holds the WHY: forensic
 evidence, boot-source walkthrough, storage internals, environment specs, and
 the v1 → v2 correction log. Evidence grading as in SKILL.md: **[V]** verified
 2026-08-28, **[S]** from `/start.sh` source, **[I]** inherited/unverified.
+Deep-dive modules live in `kb/` — notably `kb/bash-rendering.md` (the bash
+output filter), `kb/token-redaction.md` (the `[REDACTED]` illusion), and
+`kb/zbackupd.md` (the v6 backup daemon).
 
 ## 1. v1 → v2 corrections (what the old notes got wrong or stale)
 
@@ -35,6 +38,10 @@ the v1 → v2 correction log. Evidence grading as in SKILL.md: **[V]** verified
 - ulimits: max user processes 1024, open files 1024 (hard 100000), stack 8 MB.
 - Hostname = FC container id (e.g. c-6a90fbaa-…), mapped in /etc/hosts.
 - TZ=UTC. `date` prints UTC — use UTC everywhere.
+- Toolchain **[V 2026-10-05]**: node v24.21.0, uv 0.12.17, git 2.47.3,
+  bun 1.3.14, python 3.12.14 — drifts with the IMAGE (2026-09-21 build;
+  the 2026-07-22 image had node 24.19.0 / uv 0.12.5, rest identical),
+  not per boot.
 
 ## 3. Boot sequence (from /start.sh source [S])
 
@@ -65,6 +72,12 @@ the v1 → v2 correction log. Evidence grading as in SKILL.md: **[V]** verified
 7. Wait for ZAI :12600, then `exec caddy run --config /app/Caddyfile` (port 81
    must be healthy within 120 s or FC recycles the instance).
 - Boot ≈ 13 s to caddy in the observed session.
+- start.sh record **[V 2026-10-05]**: 425 lines, 18,206 B, sha256
+  `c36a3153…ed5cb`, image built 2026-09-21 (previous: 421 lines / 17,892 B
+  / `6e4bc962…`, image 2026-07-22). The only change: a +4-line
+  AI_GATEWAY_URL injection (lines 287–291; default
+  `https://internal-api.z.ai`; comments name oss_gateway.py / prestop.py /
+  wsmgr). Still zero watchdog code. Full record: kb/container-internals.md.
 
 ## 4. The HEAD watchdog — forensic detail [V]
 

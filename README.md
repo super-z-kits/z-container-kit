@@ -12,6 +12,22 @@ Every operational claim in `SKILL.md` is graded: **[V]** verified live,
 **[S]** read from the boot-script source, **[I]** inherited/unverified.
 The experiment log backing the [V] grades is `evidence/EXPERIMENTS.md`.
 
+## v6 layout — consumer/research split
+
+The v5 kit was one 148KB reading surface — and in practice was NEVER adopted
+(that is why v6 exists). v6 splits the audience:
+
+| you are | read | size |
+|---|---|---|
+| a working agent that wants safety with zero overhead | `consumer/SKILL.md` | ~3KB, 2 min |
+| the kit research/maintenance agent | `RESEARCH.md` + `kb/` + `evidence/` | as deep as needed |
+
+`SKILL.md` (this repo root) is a 20-line router — including the ONE command
+(`consumer/zenv start`) — because the platform surfaces SKILL.md as the zip's
+entry at sub-agent spawn. `scripts/zbackupd.py` is the v6 headline feature:
+the continuous background backup daemon (design + test results in
+`kb/zbackupd.md`).
+
 ## v5 layout (zero-install, STATIC user-skills, multi-track proven)
 
 The kit lives ONCE per account at `/home/user_skills/z-container-kit/`
@@ -95,15 +111,19 @@ default set on what is really a multi-repo account).
 
 | path | purpose |
 |---|---|
-| `SKILL.md` | operational survival guide — start here (MUST-READ session section first) |
+| `SKILL.md` | 20-line router + the ONE command (zip entry point) |
+| `consumer/SKILL.md` | THE consumer surface: one command, five laws, danger list |
+| `consumer/zenv` | consumer CLI: start/stop/status/pat/restore (wraps zbackupd) |
+| `RESEARCH.md` | research-agent entry: full verified mechanics (old SKILL.md) |
 | `reference.md` | deep detail: boot sequence, storage internals, forensics, helper internals |
-| `scripts/zsave` | one-command persistence: commit + push (auto-rebase on rejection) + snapshot + `repo.tar` refresh |
+| `scripts/zbackupd.py` | the continuous background backup daemon (mirror + sideband-git dual remote) |
+| `scripts/zsave` | one-command MANUAL persistence: commit + push (auto-rebase on rejection) + snapshot + `repo.tar` refresh |
 | `scripts/zsession` | read-only session situation report (recycle detection, kit & config status, account default) |
 | `scripts/zk-init` | project identity (`--force`, `--status`) + account-default bridge (`--default`, `--set-default`) |
 | `scripts/refresh.sh` | account-level upgrade: atomic package refresh + zip rebuild + housekeeping |
 | `scripts/resolve-prefix.sh` | the identity contract (ZK_PREFIX env > .agents/config > loud failure) |
 | `scripts/daemonize.py` | double-fork daemonizer — survives the per-toolcall process cull |
-| `kb/` | deep-dive modules (session start & recovery, watchdog, …) |
+| `kb/` | deep-dive modules (watchdog, rendering, redaction, zbackupd, …) |
 | `evidence/` | experiment log + raw forensics backing every [V] claim |
 
 ## Notes
@@ -128,9 +148,26 @@ default set on what is really a multi-repo account).
   (observed-upgrade + mount-reading hazards), repo-tar-mechanics, troubleshooting
   (mode-law attribution fix), SKILL.md mechanism/persistence sections.
   (known-stale: zsession's on-main message still names `git switch main` —
-  scripts frozen this release; on-main the prelude is report-only).
-  (known-stale: zsession's on-main message still names `git switch main` —
-  scripts frozen this release; on-main the prelude is report-only).
+  scripts frozen that release; on-main the prelude is report-only; fixed in v6.0.0).
+- Version 6.0.0 — consumer/research split + the backup daemon. (1) `consumer/` surface:
+  `zenv` CLI + 3KB SKILL.md (one command, five laws, danger list) — built for ADOPTION
+  (the v5 148KB surface was never used in practice); root `SKILL.md` is now a 20-line
+  router; old SKILL.md moved verbatim to `RESEARCH.md`. (2) `scripts/zbackupd.py` +
+  `zenv`: continuous background backup — 60s cycles mirror every work tree (incl.
+  .git — uncommitted + unpushed work) to /home/sync/zbackup (merge-only, never
+  deletes: force-kill survivors are never pruned) + sideband-git snapshot branches
+  (auto/<label>/<chat8>-<bootts>) pushed to private github + gitlab repos
+  (GIT_ASKPASS auth — PATs never in URLs/cmdlines/logs; privacy precheck; WAF
+  retry). Zero interference proven byte-level (.git checksums identical across
+  cycles). Full design-gate (T10-a/b adversarial, SHIP-AFTER-FIXES) + live
+  validation battery T1-T10 in `kb/zbackupd.md` + evidence/EXPERIMENTS.md E21.
+  (3) New platform knowledge: bash output rendering filter (SGR-eater eats plain
+  `[0m` too; `od -c` remedy — kb/bash-rendering.md), token display redaction
+  (display-only; glpat NOT covered; my-project/.env boot-rewritten —
+  kb/token-redaction.md), Sep-21 image drift (AI_GATEWAY_URL injection in
+  start.sh; caddy version NOT safe — any command-position caddy is filtered),
+  /home/z/TODO cross-agent channel, PAT persistence channels ranked
+  (zk-secrets.env per-user channel added; /home/sync/SECRETS.env per-chat).
 - Version 5.5.0 — long-running-mode/cron deep dive: new `kb/long-running-cron.md`
   (verified live via experiments A/B across user-driven + cron-fired rounds) + a brief
   `SKILL.md` section (the `cron` tool surface, `agentTurn` vs `webDevReview`, and five

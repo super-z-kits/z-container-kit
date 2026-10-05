@@ -38,6 +38,21 @@ append-only). This container adds three things:
 - Sub-agents get independent tool sessions — delegate risky probes (port
   checks, command filters) to them to protect the main session from the
   terminal-lockout hazard (see `kb/terminal-lockout.md`). When you do, embed
-  the hazard warnings in their prompt (never loop caddy commands, never
-  curl-loop the gateway ports, one probe per toolcall) — they will not know
-  them otherwise.
+  the hazard warnings in their prompt (never type the gateway binary name in
+  command position — no subcommand is exempt; never curl-loop the gateway
+  ports; one probe per toolcall) — they will not know them otherwise.
+
+## /home/z/TODO — shared TodoWrite state [V 2026-10-05]
+
+TodoWrite state is ONE root-owned, world-readable, plaintext-JSON file
+at `/home/z/TODO`, and it is SHARED across concurrent agents:
+
+- **Leak channel**: any agent can read sibling agents' todo lists (at
+  audit time it held a concurrent sibling's list).
+- **Collision hazard**: TodoWrite state is NOT per-agent — concurrent
+  sub-agents overwrite the one shared file; siblings clobber each
+  other's lists.
+- **Ephemeral**: lives on the overlay — does not survive a recycle.
+
+Implications: never put secrets or sensitive plan detail in todos;
+treat todo state as public-among-siblings and volatile.

@@ -20,11 +20,14 @@ under `/tmp/my-project/` (PolarFS — force-kill-safe) plus
 the observed recycle it was written at the END of the session's last turn
 (05:10:22, before the 05:47 pre-stop) and was NOT updated by the next session's
 active turns — i.e. it is a session-idle/recycle-boundary artifact, not
-per-turn. At boot-restore the platform uses it for the project top dir's
-metadata (restored dir shows mode 0700 + the manifest's backward mtime on a
-fresh inode). The top dir's mtime can also be touched mid-session (entry
-create+delete) — the namespace is live, not inert. Trigger timing beyond this
-is unverified.
+per-turn. At boot-restore the platform has been observed using it for the
+project top dir's metadata — once: mode 0700 + the manifest's backward
+mtime on a fresh inode (2026-09-28 boot, T5-d). That normalization is NOT
+invariant: the 2026-10-05 boot restored the top dir with mode 755 + the
+boot mtime instead — do not build anything on top-dir mode/mtime. The
+top dir's mtime can also be touched mid-session (entry create+delete) —
+the namespace is live, not inert. Trigger timing beyond this is
+unverified.
 
 ## Reading hazards
 
@@ -35,6 +38,12 @@ is unverified.
   misobservation in this investigation — there was no drift.
 - ossfs mounts show 0777 modes and epoch-0-ish directory dates — do not infer
   permissions or freshness from mode bits there.
+- **Bridge tmpfs UUIDs regenerate per boot** (sync bridge: Sep-9
+  `rundoss-ffcf909f…`, Oct-5 `rundoss-5b5c8ff8…`) while the backing-store
+  content persists — repo.tar continuity proves the same OSS namespace —
+  so a bridge ID is NOT a persistence handle [V 2026-10-05]. The PolarFS
+  volume ID, in contrast, IS stable: identical across 3 container
+  generations.
 - Per-chat namespaces (`/home/sync`, `/tmp/my-project`, `upload/`) do not
   follow you into a NEW chat; github is the only guaranteed cross-chat
   persistence (the account default file in `/home/user_skills` can re-wire a

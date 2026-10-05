@@ -246,3 +246,69 @@ user-skill extraction absent this boot. NEW: bash-wrapper keyword filter
 /tmp/my-project top-dir mtime touched mid-session (namespace live).
 Egress IP, all tool versions, /start.sh, stages.yaml (15 stages, zero
 watchdog refs), process-tree structure, /app perms: unchanged.
+
+## E18 — 7-day-idle graceful recycle forensics (2026-10-05)
+
+Container down since Sep 28 22:37 (scale-to-zero after 7 days idle),
+restored from the platform's own pre-stop repo.tar (5.4 MB, mtime 22:37
+= the shutdown second; the manual 21:46 zsave refresh was OVERWRITTEN by
+the platform's later pre-stop tar — the platform tar wins). Tree clean
+on main @ b132362; mode law 3rd generation (all-755 restore with
+core.filemode=false surviving via .git/config inside the tar → status
+CLEAN — the remedy validated across a 7-day recycle). Bridge python PID
+899 deterministic across boots (3rd generation). /tmp/my-project
+platform snapshot mtime Sep 28 21:47 (= 1 min after the final commit,
+NOT at pre-stop) — the write trigger remains open.
+.initial_snapshot.json = mtime manifest of the tracked set (no .git, no
+skills/).
+
+## E19 — Bash output rendering matrix (2026-10-05, T9-b)
+
+72-case od-verified corpus (research repo scratch/ansitest/matrix/).
+Bash tool output = two-layer filter. Layer 1 (pre-persistence, lossy):
+R1 SGR-eater deletes every `\[[0-9;?]*m` match — ESC NOT required
+(plain-text `[0m` eaten without any escape byte); R2 strict UTF-8
+(invalid byte → U+FFFD, no latin-1 fallback); R3 all other bytes pass
+to the persisted artifact byte-exact; R4 size/truncation/preview
+computed POST-filter (ground truth unrecoverable from the artifact).
+Layer 2 (display, Bash+Read): ESC/BEL/BS/VT/FF/CR/SO/SI/DEL invisible;
+CR/BS join, never overwrite; NUL → space. Read tool skips R1 (shows SGR
+bodies, latin-1 glyphs for invalid bytes, refuses .bin by EXTENSION);
+Write tool + the command channel silently DROP raw ESC. Remedy: `od -c`
+fully reliable; cat -v / sed -n l partial (re-eaten); grep -a useless.
+Full rules: kb/bash-rendering.md.
+
+## E20 — Token redaction characterization (2026-10-05, T9-c)
+
+Display redaction is 100% DISPLAY-ONLY: all 11 write methods (printf,
+assembled-halves, heredoc, tee, python3, base64 -d, split echoes, Write
+tool, git remote add, real-token end-to-end ×2 incl. sourcing +
+ls-remote exit 0) land byte-intact, sha256-proven. Pattern:
+`gh[poushr]_|github_pat_` + ≥20 alnum → `[REDACTED:github_token]`;
+`xoxb-` → slack; glpat-/AKIA/dp.pt./base64/hex NOT covered (glpat shows
+in clear). Truth paths: hash compare, wc -c, grep -cF assembled,
+base64 <file>, ls-remote exit codes. /home/z/my-project/.env is
+boot-rewritten (start.sh:70/98) — never store PATs there. PAT channels
+ranked — recycle: /home/sync/SECRETS.env + /home/user_skills/zk-secrets.env
+(ossfs/PolarFS, force-kill-proof) > repo.tar riders (URL-embedding +
+committed files; rotation is the weak link) > dotfiles dead; new
+sandbox: /home/user_skills (per-user) > GitHub repo content (URL-
+embedding and /home/sync do NOT carry). Leak vector found: PAT-in-URL
+pushes + /proc-cmdline-capturing observers = plaintext tokens in logs
+(4 copies already in pushed history — excluded + masked going forward;
+instruments must mask). Full rules: kb/token-redaction.md.
+
+## E21 — zbackupd build + validation (2026-10-05)
+
+Design gated by 2 adversarial reviewers (T10-a/T10-b, both
+SHIP-AFTER-FIXES; P0s folded: `core.bare=false` sideband recipe,
+PAT-in-/proc publication → GIT_ASKPASS, recycle non-FF death →
+branch-per-boot, `--delete` destroying force-kill survivors →
+merge-only mirror). Live battery T1–T10 all PASS: first cycle 6 min /
+2,363 files / 21.5 MB seed, 36 s delta cycle, signature gate, source
+`.git` sha-identical interference proof, b.txt monotonic survivor
+(source-deleted file survives in the mirror), github + gitlab pushes
+verified, backup repos auto-created private. stdio-inheritance
+daemonization bug found + fixed. ossfs find/stat cost measured (30 s
+timeout on a 2,600-file mirror walk → merge-only removed the need).
+Details: kb/zbackupd.md.
