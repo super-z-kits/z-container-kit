@@ -79,12 +79,19 @@ signature walk gates cycles (ossfs cost is O(changes), not O(files)).
 
 - First cycle on a big tree is minutes (ossfs per-file latency); it is fully
   async — `zenv start` returns in <1s and never blocks the agent.
-- Boot autostart: `zenv start` writes `mini-services/zbackupd/package.json`
-  ONLY when `my-project/package.json` exists (start.sh gates mini-services on
-  it — verified this round). The file is never committed by zenv; the
-  platform's turn-boundary `git add -A` stages it into repo.tar. Without a
-  root package.json there is NO boot autostart — the consumer SKILL one-liner
-  is the primary path (research repos have no package.json by design).
+- Boot autostart [v6.1, T12-b D1/D2 redesign]: `zenv autostart` is the ONE
+  explicit door — `zenv start` never writes inside the repo (zero-interference
+  contract restored). Dual mechanism by workspace type: package.json →
+  `mini-services/zbackup/package.json` (boots with the dev server); bare
+  workspace → `.zscripts/dev.sh` (start.sh:332 runs it regardless of
+  package.json — the elif at :342 only fires when dev.sh is absent). dev.sh is
+  SELF-MIGRATING: if package.json appears later, it rm's itself, installs the
+  mini-services hook, and still starts the daemon that boot (its bare
+  existence would otherwise shadow the dev-server flow — T12-b D1 P0). The
+  hook must be committed (repo.tar = tracked set exactly, verified T12-b D3);
+  after one graceful recycle it survives even force-kills. Singleton is a real
+  kernel flock on /home/z/.zenv/daemon.lock held by the supervisor (T12-b D2 —
+  the docstring claim is true since v6.1; before that it was check-then-act).
 - Config: `/home/z/.zenv/config.json` (optional) — `interval`, `push` toggles,
   remote repo overrides. Defaults: 60s, zikomolapoutl/zai-sandbox-backup +
   ansgareutychisO/zai-sandbox-backup.

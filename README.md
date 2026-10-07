@@ -149,6 +149,19 @@ default set on what is really a multi-repo account).
   (mode-law attribution fix), SKILL.md mechanism/persistence sections.
   (known-stale: zsession's on-main message still names `git switch main` —
   scripts frozen that release; on-main the prelude is report-only; fixed in v6.0.0).
+- Version 6.1.0 — cross-recycle seam validated + sticky autostart + hardened
+  recovery. (1) The daemon's FIRST real cross-recycle trial (Oct 5 → Oct 7,
+  ~42h force-kill window): cold start 0.4 s, first cycle both remotes green,
+  both boot-generations of sideband branches coexisting on the remote, mirror
+  byte-exact. (2) `zenv autostart`: opt-in sticky boot hooks (mini-services for
+  package.json workspaces, self-migrating `.zscripts/dev.sh` for bare ones);
+  `zenv start` no longer writes inside repos (zero-interference restored).
+  (3) Kernel flock singleton (race-test-verified: 3 parallel starts → 1
+  supervisor). (4) Cross-chat `zenv restore` fallback: no local state → prints
+  the remote clone recipe with a working askpass. (5) Consumer-surface fixes
+  from T12-a/T12-b usability rounds: mirror-never-deletes documented + single-
+  file recovery recipe, fresh-chat line, Web-preview line, Law-5 sharpened to
+  all four display channels (Write/Edit disk-intact proven), ~213 B of cuts.
 - Version 6.0.0 — consumer/research split + the backup daemon. (1) `consumer/` surface:
   `zenv` CLI + 3KB SKILL.md (one command, five laws, danger list) — built for ADOPTION
   (the v5 148KB surface was never used in practice); root `SKILL.md` is now a 20-line

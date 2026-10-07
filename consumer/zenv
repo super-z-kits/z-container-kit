@@ -6,6 +6,8 @@
 #   zenv status     one-screen status (daemon, mirrors, pushes, PAT channels)
 #   zenv stop       clean stop
 #   zenv pat <gh-pat> [gl-pat]   stamp tokens into ALL persistence channels
+#   zenv autostart  sticky protection: install a boot hook so the daemon
+#                   starts on EVERY container boot (survives recycles in repo)
 #   zenv restore [label]         print recovery recipes (--apply = copy to fresh dir)
 #
 # What the daemon does: every 60s it mirrors your work trees (incl. .git, so
@@ -15,6 +17,9 @@
 set -uo pipefail
 
 KIT_SCRIPTS="/home/user_skills/z-container-kit/scripts"
+# self-locating fallback — kit cloned/installed somewhere else:
+_alt="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" 2>/dev/null && pwd)"
+[ -n "$_alt" ] && [ -f "$_alt/zbackupd.py" ] && KIT_SCRIPTS="$_alt"
 STAGED="${ZENV_KIT_SCRIPTS:-}"          # testing override
 if [ -n "$STAGED" ] && [ -f "$STAGED/zbackupd.py" ]; then
   KIT_SCRIPTS="$STAGED"
@@ -23,7 +28,7 @@ PY=python3
 ZBD="$KIT_SCRIPTS/zbackupd.py"
 ZDIR="/home/z/.zenv"
 SYNC="/home/sync"
-PROJ="/home/z/my-project"
+PROJ="${ZENV_PROJECT:-/home/z/my-project}"   # testing override
 
 cmd="${1:-start}"
 shift || true
@@ -48,14 +53,9 @@ case "$cmd" in
       [ "$(git -C "$PROJ" config core.filemode 2>/dev/null)" = "false" ] || \
         git -C "$PROJ" config core.filemode false 2>/dev/null
     fi
-    # opportunistic boot-autostart (only for package.json projects — start.sh
-    # gates mini-services on it; harmless elsewhere, never committed by us —
-    # the platform's own turn-boundary `git add -A` stages it into repo.tar)
-    if [ -f "$PROJ/package.json" ] && [ ! -f "$PROJ/mini-services/zbackupd/package.json" ]; then
-      mkdir -p "$PROJ/mini-services/zbackupd" 2>/dev/null && \
-      printf '{"name":"zbackupd","private":true,"scripts":{"dev":"bash %s/consumer/zenv start"}}\n' \
-        "$(dirname "$KIT_SCRIPTS")/consumer" > "$PROJ/mini-services/zbackupd/package.json" 2>/dev/null
-    fi
+    # NOTE: `zenv start` NEVER writes inside your repo. Boot hooks are opt-in
+    # only via `zenv autostart` (one explicit door, one hook dir — no races,
+    # no surprise repo mutations; T12-b D2).
     # launch (returns immediately after the first fork)
     $PY "$ZBD" --daemon
     # wait for the supervisor pidfile (double-fork completes async)
@@ -102,9 +102,55 @@ case "$cmd" in
   restore)
     label="${1:-}"
     ST="$SYNC/zbackup/STATE.json"
+    GHREPO="https://github.com/zikomolapoutl/zai-sandbox-backup.git"
+    GLREPO="https://gitlab.com/ansgareutychisO/zai-sandbox-backup.git"
+    # bootstrap askpass helpers from PAT channels (same 0700 format the daemon
+    # uses; PAT never appears in a URL or cmdline). Idempotent; prints hosts.
+    HOSTS=$($PY - <<'PYEOF'
+import os, re
+pats = {}
+for f in ["/home/user_skills/zk-secrets.env", "/home/sync/SECRETS.env"]:
+    try: t = open(f).read()
+    except OSError: continue
+    for k, host in [("GITHUB_PAT","github"), ("GITLAB_PAT","gitlab")]:
+        if host not in pats:
+            m = re.search(r'^%s=(\S+)' % k, t, re.M)
+            if m: pats[host] = m.group(1)
+for host, pat in pats.items():
+    p = "/home/z/.zenv/askpass-%s.sh" % host
+    os.makedirs("/home/z/.zenv", exist_ok=True)
+    open(p, "w").write("#!/bin/bash\ncase \"$1\" in *sername*) echo 'token';; *) echo '%s';; esac\n" % pat)
+    os.chmod(p, 0o700)
+print(" ".join(sorted(pats)))
+PYEOF
+)
     if [ ! -f "$ST" ]; then
-      echo "no $ST — nothing backed up in this chat's /home/sync namespace." >&2
-      exit 1
+      # Fresh chat / wiped /home/sync: the per-chat mirror is gone, but every
+      # previous session's snapshot branches live on the REMOTE backup repos
+      # (per-USER — they cross chats). This is the way back.
+      echo "== no local backup state ($ST missing) — fresh chat or empty /home/sync."
+      echo "   Previous sessions' snapshots live on the REMOTE backup repos (cross-chat):"
+      echo
+      case " $HOSTS " in
+        *github*)
+          echo "   1) list every session's snapshot branch (newest = highest trailing timestamp):"
+          echo "      GIT_ASKPASS=$HOME/.zenv/askpass-github.sh GIT_TERMINAL_PROMPT=0 \\"
+          echo "        git ls-remote --heads $GHREPO 'auto/*'"
+          echo "   2) clone the branch you want:"
+          echo "      GIT_ASKPASS=$HOME/.zenv/askpass-github.sh GIT_TERMINAL_PROMPT=0 \\"
+          echo "        git clone -b auto/<repo-label>/<chat8>-<bootts> $GHREPO <dest>"
+          ;;
+        *)
+          echo "   No PAT in any channel — run: zenv pat <github-pat> [gitlab-pat], then retry."
+          echo "   Then: git ls-remote --heads $GHREPO 'auto/*'  (askPAT created by zenv pat)"
+          ;;
+      esac
+      echo
+      echo "   gitlab mirror of the same branches (WAF blocks ~1/3 of requests — just retry):"
+      echo "     $GLREPO"
+      echo "   note: the /home/sync mirror is per-chat and NOT available in a fresh chat —"
+      echo "         the remote is the way back."
+      exit 0
     fi
     if [ -z "$label" ]; then
       echo "== backed-up sources (from $ST):"
@@ -113,12 +159,16 @@ import json,sys
 st=json.load(open('$ST'))
 for k,v in sorted(st.get('sources',{}).items()):
     m=v.get('mirror',{})
-    print('  %-18s last-cycle %s  mirror-files %s' % (k, v.get('sideband_at','?'), m.get('files','?') if isinstance(m,dict) else '?'))
+    print('  %-18s last-sync %s  mirror-files %s' % (k, v.get('mirror_at', v.get('sideband_at','?')), m.get('files','?') if isinstance(m,dict) else '?'))
 print('run_id:', st.get('run_id'))
 "
       echo
       echo "usage: zenv restore <label>          # recipes"
       echo "       zenv restore <label> --apply  # copy mirror to a FRESH dir"
+      echo "single lost file? the mirror NEVER deletes —"
+      echo "  cp $SYNC/zbackup/<label>/mirror/<relative-path> ."
+      echo "remote (cross-chat): GIT_ASKPASS=$HOME/.zenv/askpass-github.sh \\"
+      echo "  git ls-remote --heads $GHREPO 'auto/*'"
       exit 0
     fi
     M="$SYNC/zbackup/$label/mirror"
@@ -126,16 +176,62 @@ print('run_id:', st.get('run_id'))
       echo "no mirror for label '$label' at $M" >&2
       exit 1
     fi
+    RUNID=$($PY -c "import json;print(json.load(open('$ST')).get('run_id','?'))" 2>/dev/null)
+    SYNCED=$($PY -c "import json;print(json.load(open('$ST'))['sources'].get('$label',{}).get('mirror_at','?'))" 2>/dev/null)
     echo "== restore recipes for '$label'"
     echo "mirror : $M  (plain files incl. .git; $(du -sh "$M" 2>/dev/null | cut -f1))"
-    echo "remote : git clone -b auto/$label/<run-id> https://github.com/zikomolapoutl/zai-sandbox-backup.git"
-    echo "         (list branches: git ls-remote --heads https://github.com/zikomolapoutl/zai-sandbox-backup.git 'auto/$label/*')"
-    echo "freshness: mirror last synced $(stat -c %y "$M" 2>/dev/null | cut -c1-19)"
+    echo "remote : git clone -b auto/$label/$RUNID https://github.com/zikomolapoutl/zai-sandbox-backup.git"
+    echo "         (this boot's branch; older boots: git ls-remote --heads https://github.com/zikomolapoutl/zai-sandbox-backup.git 'auto/$label/*')"
+    echo "freshness: mirror last synced $SYNCED (STATE.json mirror_at; dir mtimes are source-inherited and lie)"
+    echo "single file: cp $M/<relative-path> <dest>   # mirror NEVER deletes — lost/deleted files stay"
     if [ "${1:-}" = "--apply" ] || [ "${2:-}" = "--apply" ]; then
       DEST="$HOME/$label.restored-$(date -u +%Y%m%d-%H%M%S)"
       echo "copying mirror -> $DEST (NEVER clobbers a live tree; pick what you need from there)"
       mkdir -p "$DEST" && cp -a "$M/." "$DEST/" && echo "done: $DEST"
     fi
+    ;;
+
+  autostart)
+    # Sticky protection: pick the SAFE boot hook for this workspace type.
+    # - package.json workspace  -> mini-services/zbackup (boot's bun+mini-services flow;
+    #   NEVER .zscripts/dev.sh here — it would REPLACE the dev-server boot!)
+    # - bare workspace (no package.json) -> .zscripts/dev.sh (start.sh:332 runs it
+    #   regardless; nothing is replaced because no dev flow exists)
+    SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+    if [ -f "$PROJ/package.json" ]; then
+      mkdir -p "$PROJ/mini-services/zbackup"
+      printf '{\n  "name": "zbackup-autostart",\n  "private": true,\n  "scripts": { "dev": "bash %s start" }\n}\n' "$SELF" \
+        > "$PROJ/mini-services/zbackup/package.json"
+      echo "installed: mini-services/zbackup/package.json (boots alongside your dev server)"
+      echo "COMMIT it (or let the platform's turn-boundary git add -A stage it) so repo.tar"
+      echo "carries it — protection is baked in from your next recycle on."
+      echo "Remove the dir to uninstall."
+    else
+      mkdir -p "$PROJ/.zscripts"
+      cat > "$PROJ/.zscripts/dev.sh" <<EOF
+#!/bin/bash
+# zbackupd autostart — written by 'zenv autostart'. Idempotent, non-blocking.
+# SELF-MIGRATING (T12-b D1): if this workspace later gains a package.json,
+# this file's mere EXISTENCE would shadow the dev-server boot flow
+# (start.sh:332 if/elif) — so remove ourselves, hand over to the
+# mini-services hook, and still start the daemon this boot.
+if [ -f /home/z/my-project/package.json ]; then
+  rm -f "\$0"
+  bash "$SELF" autostart >/dev/null 2>&1 || true
+  exit 0
+fi
+bash "$SELF" start >/dev/null 2>&1 || true
+exit 0
+EOF
+      chmod 755 "$PROJ/.zscripts/dev.sh"
+      echo "installed: .zscripts/dev.sh (start.sh:332 executes it on every container boot)"
+      echo "it self-removes + switches to the mini-services hook if this workspace"
+      echo "ever gains a package.json (so your dev-server boot flow is never shadowed)."
+      echo "COMMIT it (or let the platform's turn-boundary git add -A stage it) so repo.tar"
+      echo "carries it — protection is baked in from your next recycle on."
+    fi
+    echo "starting daemon now too (no need to wait for the next boot):"
+    exec "$0" start
     ;;
 
   *)

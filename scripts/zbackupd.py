@@ -28,6 +28,7 @@ Usage:
   zbackupd.py --cycle-once          # one cycle, no daemonizing (testing)
 """
 import errno
+import fcntl
 import json
 import os
 import re
@@ -647,6 +648,16 @@ def daemon():
         os.close(devnull)
     signal.signal(signal.SIGTERM, _sigterm)
     os.makedirs(ZENV, exist_ok=True)
+    # kernel-enforced singleton (T12-b D2): a racing second supervisor takes
+    # the lock or exits quietly. Held for the supervisor's lifetime; the lock
+    # file is advisory-flock on ZENV/daemon.lock and auto-released on death.
+    try:
+        global _SINGLETON_LOCK
+        _SINGLETON_LOCK = open(ZENV + "/daemon.lock", "w")
+        fcntl.flock(_SINGLETON_LOCK.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        log("singleton lock held by another supervisor - exiting (not an error)")
+        os._exit(0)
     with open(SUP_PID, "w") as f:
         f.write(str(os.getpid()))
     log("supervisor start pid=%d" % os.getpid())
