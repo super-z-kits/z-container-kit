@@ -149,6 +149,22 @@ default set on what is really a multi-repo account).
   (mode-law attribution fix), SKILL.md mechanism/persistence sections.
   (known-stale: zsession's on-main message still names `git switch main` —
   scripts frozen that release; on-main the prelude is report-only; fixed in v6.0.0).
+- Version 6.2.0 — leg-A delta-copy redesign (round-11). Measured live: a
+  full-tree rsync to /home/sync timed out >300 s at only 2.5k files / 22.5 MB
+  (dd streams the same mount at 116 MB/s; cp ~20 ms/file — rsync's per-file
+  protocol ~6x cp). Leg A is now a map-driven changed-set copy
+  (`cp --parents -p -f -P`, batches of 2000): O(changed) fuse ops, rsync
+  dependency removed, NEVER-deletes semantics unchanged. Map beside the
+  mirror (`<label>.map.json`, survives recycles) with the hard invariant: an
+  entry exists only when the mirror provably holds that file (verify-on-
+  failure, vanished-vs-error split — T13 P0-1). Health: daily full reconcile +
+  rotating 8-entry size-only sampling bounds mirror damage at <=24h.
+  Change-gate fix found by the acceptance battery (31/31): STATE round-trips
+  tuples to lists, so tuple==list made the first cycle of every fresh process
+  run unconditionally — normalized; boot cycles after no-change seams skip.
+  Hygiene: research-repo remote URLs are PAT-free by law (askpass auth;
+  push-research.sh self-bootstraps helpers on a fresh boot). Design review
+  T13-design: SHIP-AFTER-FIXES, 1 P0 / 6 P1 / 6 P2, all folded.
 - Version 6.1.0 — cross-recycle seam validated + sticky autostart + hardened
   recovery. (1) The daemon's FIRST real cross-recycle trial (Oct 5 → Oct 7,
   ~42h force-kill window): cold start 0.4 s, first cycle both remotes green,

@@ -1,4 +1,4 @@
-# z-container-kit — consumer SKILL (v6.1)
+# z-container-kit — consumer SKILL (v6.2)
 
 One command makes your work un-losable. That is 90% of this kit.
 
@@ -11,7 +11,9 @@ bash /home/user_skills/z-container-kit/consumer/zenv start
 - Every 60s the background daemon mirrors ALL your work trees — including
   uncommitted and unpushed work — to `/home/sync/zbackup` (survives even
   force-kill recycles) and pushes snapshot branches to your private github +
-  gitlab backup repos.
+  gitlab backup repos. It copies only changed files, so large trees never
+  hit the old rsync timeout class (a first-ever seed of a huge tree still
+  takes minutes — resumable by design).
 - Zero interference: it never commits, branches, or writes anything inside
   your repos. Idempotent; `zenv status` / `zenv stop`.
 - After a session was cut off: `zenv restore` prints exactly how to get the

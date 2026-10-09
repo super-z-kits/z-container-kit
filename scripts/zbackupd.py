@@ -7,7 +7,7 @@ Gate verdicts: SHIP-AFTER-FIXES (both attackers); all P0/P1 fixes folded in:
   - PATs NEVER in URLs or cmdlines: GIT_ASKPASS helper files (0700) per host
   - branch-per-boot: auto/<label>/<chat8>-<bootts> (recycle = fresh sideband,
     never non-FF against the remote; never create flat auto/<label> refs)
-  - mirror seed cycle without --delete; >50% shrink guard; orphan rule
+  - mirror never deletes (monotonic, T12-a lost-work law); orphan rule
   - flock singleton; /proc cmdline verify before any kill; stale lock sweep
   - sanitized subprocess env (whitelist; /usr/bin/git absolute; no GIT_* inherit)
   - subprocess timeouts; ossfs-is-fuse gate; privacy precheck before first push
@@ -15,8 +15,15 @@ Gate verdicts: SHIP-AFTER-FIXES (both attackers); all P0/P1 fixes folded in:
   - ALERT file on /home/sync survives force-kill; STATE.json atomic
   - observer*.log + tool-results/ excluded from BOTH legs (PAT-leak law, T9-c B.6)
 
-Legs per source, every cycle (default 60s):
-  A (primary)  rsync mirror  -> /home/sync/zbackup/<label>/mirror/   (includes .git)
+Legs per source, every cycle (default 60s), change-gated by a local walk:
+  A (primary)  delta-copy mirror -> /home/sync/zbackup/<label>/mirror/ (incl .git)
+               round-11 redesign: map-driven changed-set `cp --parents -p -f -P`
+               in batches; O(changed) fuse ops; NEVER deletes (lost-work law).
+               rsync removed (per-file protocol measured 6x cp; seed timed out
+               >300s at only 2.5k files). Map beside the mirror
+               (<label>.map.json); invariant: an entry exists ONLY when the
+               mirror provably holds that file (map-behind = safe re-copy,
+               map-ahead = loss). Daily reconcile + rotating 8-sample check.
   B (secondary) sideband git -> push auto-branch to github + gitlab backup repos
 The daemon NEVER writes inside a source's .git (sole exception: none — zenv,
 not the daemon, sets core.filemode on my-project).
@@ -33,13 +40,14 @@ import json
 import os
 import re
 import signal
+import stat
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 
-VERSION = "1.0.0"
+VERSION = "1.1.2"
 ZENV = "/home/z/.zenv"
 SYNC = "/home/sync"
 BACKUP_ROOT = SYNC + "/zbackup"
@@ -51,6 +59,10 @@ LOG_PATH = ZENV + "/daemon.log"
 MYPROJECT = "/home/z/my-project"
 GIT = "/usr/bin/git"
 DEFAULT_INTERVAL = 60.0
+CP_BATCH = 2000             # files per cp invocation (argv safety, ARG_MAX 2MB)
+CP_TIMEOUT = 240            # per-batch seconds; a 2000-file batch runs ~50-60s
+CP_BATCH_BYTES = 48 << 20   # byte cap per batch — 2000 LARGE files must not
+                            # blow CP_TIMEOUT (T13-b P2 count-only batching)
 REPO_GH = "zikomolapoutl/zai-sandbox-backup"
 REPO_GL = "ansgareutychisO/zai-sandbox-backup"
 GL_PUSH_EVERY = 2          # gitlab push every Nth change-push (WAF cost, Q2)
@@ -283,28 +295,61 @@ def excludes_for(src):
     return EXCLUDES_MYPROJECT if src == MYPROJECT else EXCLUDES
 
 
-def walk_signature(src, excl):
-    """(nfiles, total_bytes, max_mtime) over the backup-relevant tree. Local disk
-    only (overlay) — the change-gate that keeps ossfs cost O(changes) (T10-b).
-    NOTE: .git IS walked (top and nested) so commits/branch-moves change the
-    signature and trigger a cycle; heavy regen dirs are skipped."""
+def walk_filters(src):
+    """Single source of truth for the walked set == the mirrored set (T13
+    P1-4). Replaces the old hardcoded walk prune set AND leg-A's rsync
+    excludes: under delta-copy the walk product IS the copy list, so one
+    filter list must decide both (upload root-anchored; skills my-project
+    only; dev.log root file skip)."""
+    prune_any = {"node_modules", ".next", ".turbo", "tool-results"}
+    if src == MYPROJECT:
+        prune_any.add("skills")            # official skills re-extract at boot
+    prune_root = {"upload"}                # was rsync "/upload/" — root only
+    skip_root_files = {"dev.log"}          # parity with the old "/dev.log" rule
+    return prune_any, prune_root, skip_root_files
+
+
+def walk_tree(src):
+    """One walk, two products (T13 P1-2/P1-4):
+    - the sig triple (nfiles, total_bytes, max_mtime) — the change-gate that
+      keeps ossfs cost O(changes) (T10-b); .git IS walked so commits and
+      branch-moves change the signature and trigger a cycle.
+    - {relpath: (mtime_ns, size)} from os.lstat — the delta engine's product.
+      Regular files and symlinks are kept (lstat: broken links survive, link
+      size = target length); fifo/socket/device are counted, never mirrored,
+      never an error (a fifo would hang cp)."""
+    prune_any, prune_root, skip_root = walk_filters(src)
     n = b = 0
     mx = 0.0
-    ex_names = {"node_modules", ".next", ".turbo", "tool-results", "upload",
-                "skills"}
-    for root, dirs, files in os.walk(src):
-        dirs[:] = [d for d in dirs if d not in ex_names]
-        for f in files:
+    files = {}
+    specials = 0
+    for root, dirs, fnames in os.walk(src):
+        at_root = (root == src)
+        dirs[:] = [d for d in dirs
+                   if d not in prune_any and not (at_root and d in prune_root)]
+        for f in fnames:
             if f.endswith(".tar") or f.startswith("observer") and f.endswith(".log"):
                 continue
+            if at_root and f in skip_root:
+                continue
+            p = os.path.join(root, f)
             try:
-                st = os.stat(os.path.join(root, f))
-                n += 1
-                b += st.st_size
-                mx = max(mx, st.st_mtime)
+                st = os.lstat(p)
             except OSError:
-                pass
-    return n, b, mx
+                continue
+            m = st.st_mode
+            if (stat.S_ISFIFO(m) or stat.S_ISSOCK(m) or stat.S_ISCHR(m)
+                    or stat.S_ISBLK(m)):
+                specials += 1
+                continue
+            if not (stat.S_ISREG(m) or stat.S_ISLNK(m)):
+                continue
+            rel = os.path.relpath(p, src)
+            files[rel] = (st.st_mtime_ns, st.st_size)
+            n += 1
+            b += st.st_size
+            mx = max(mx, st.st_mtime)
+    return (n, b, mx), files, specials
 
 
 # --------------------------------------------------------------- leg A -------
@@ -315,33 +360,178 @@ def sync_is_fuse():
     return rc == 0 and "fuse" in out
 
 
-def leg_a(src, label, excl, src_sig):
-    """rsync mirror — MERGE-ONLY, never --delete (T10-b P0-3, hardened).
+def map_path(label):
+    return "%s/%s.map.json" % (BACKUP_ROOT, label)
 
-    Why no --delete, ever: after a force-kill recycle the mirror may hold the
-    ONLY copy of untracked work; the restored tracked-set source lacks those
-    files and ANY --delete cycle (even behind a % shrink guard) would prune
-    the survivors. A last-resort backup must be monotonic: files may be
-    overwritten by newer versions but never removed. Growth is bounded by the
-    per-chat /home/sync namespace; the sideband branch is the exact-tree view;
-    manual cleanup: rm -rf /home/sync/zbackup/<label>/mirror/old-dir.
 
-    The source's .git rides ALONG (top and nested — plain file copy; unpushed
-    commits are the crown jewels). The '.git' entry of EXCLUDES is a
-    SIDEBAND-only rule and is skipped here."""
+def load_map(label):
+    """Map = what the MIRROR provably holds. Survives recycles beside the
+    mirror, so the first cycle after a boot is near-free."""
+    try:
+        m = json.load(open(map_path(label)))
+        if isinstance(m, dict) and m.get("__v") == 2:
+            return m
+    except Exception:
+        pass
+    return None
+
+
+def save_map(label, m):
+    """Atomic tmp+rename. sort_keys -> deterministic iteration -> stable
+    rotating sample (T13 P1-5). Never stash this into STATE (P2-8)."""
+    tmp = map_path(label) + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(m, f, sort_keys=True, separators=(",", ":"))
+    os.replace(tmp, map_path(label))
+
+
+def build_map_from_mirror(mirror, old=None):
+    """Map-missing/damage/stale recovery, ONE unified path (T13 P2-10 — no
+    6a/6b split): walk the mirror (fuse) once and index what it holds; an
+    empty/missing mirror degenerates to the full-copy seed by itself. Crash
+    mid-seed: the map is never written -> next cycle rebuilds from the partial
+    mirror -> copies only the rest. Resume falls out for free.
+    T13-b P1-1: dirs that EIO on readdir (ossfs x control-char names, seen
+    live) keep their OLD map slots — only readable-and-absent paths are
+    dropped, so manual mirror cleanup still converges AND an unreadable
+    subtree does not become a recurring re-copy loop."""
+    m = {"__v": 2}
+    failed = []
+
+    def _err(e):
+        try:
+            rel = os.path.relpath(e.filename or "", mirror)
+        except ValueError:
+            rel = "?"
+        failed.append(rel)
+        log("mirror walk error %r (entries under it keep their old map slots)" % e)
+
+    for root, _dirs, fnames in os.walk(mirror, onerror=_err):
+        for f in fnames:
+            p = os.path.join(root, f)
+            try:
+                st = os.lstat(p)
+                m[os.path.relpath(p, mirror)] = [st.st_mtime_ns, st.st_size]
+            except OSError:
+                pass
+    if failed and old:
+        kept = 0
+        for k, v in old.items():
+            if k.startswith("__") or k in m:
+                continue
+            if any(k == f or k.startswith(f + "/") for f in failed):
+                m[k] = v
+                kept += 1
+        if kept:
+            log("mirror rebuild kept %d entries under unreadable dirs" % kept)
+    return m
+
+
+def _copy_batches(src, mirror, changed, files):
+    """Batched `cp --parents -p -f -P --` (T13 P0-1/P1-2/P1-3): -p preserves
+    mode+mtime; -f unlinks and retries when the dest cannot be opened (git's
+    0444 objects); -P never dereferences symlinks. Batches are capped by BOTH
+    count (CP_BATCH) and bytes (CP_BATCH_BYTES) — T13-b P2.
+    P0-1 classification: a file enters `mapped` ONLY when the mirror
+    provably holds its size — vanished source files are benign partial
+    (rsync-23 class); anything else (EACCES/ENOSPC/EIO/timeout) is an ERROR
+    so the file stays OUT of the map and retries next cycle."""
+    batches, batch, bbytes = [], [], 0
+    for f in changed:
+        batch.append(f)
+        bbytes += files[f][1]
+        if len(batch) >= CP_BATCH or bbytes >= CP_BATCH_BYTES:
+            batches.append(batch)
+            batch, bbytes = [], 0
+    if batch:
+        batches.append(batch)
+    mapped, partial, errs = [], False, []
+    for batch in batches:
+        rc, _, err = run(["cp", "--parents", "-p", "-f", "-P", "--"]
+                         + batch + [mirror + "/"],
+                         timeout=CP_TIMEOUT, cwd=src)
+        if rc == 0:
+            mapped.extend(batch)
+            continue
+        ok, vanished = [], []
+        for f in batch:
+            sp, mp = os.path.join(src, f), mirror + "/" + f
+            try:
+                if not os.path.lexists(sp):
+                    vanished.append(f)
+                    continue
+                if os.lstat(mp).st_size == os.lstat(sp).st_size:
+                    ok.append(f)
+            except OSError:
+                pass
+        mapped.extend(ok)
+        if vanished:
+            partial = True
+        nfail = len(batch) - len(ok) - len(vanished)
+        if nfail > 0:
+            errs.append("copy: %d/%d failed rc=%s %s"
+                        % (nfail, len(batch), rc, mask(err.strip()[:120])))
+    return mapped, partial, errs
+
+
+def leg_a(src, label, files, sig, st):
+    """delta-copy mirror — MERGE-ONLY: overwrite/new, NEVER delete (lost-work
+    law, T10-b P0-3 + T12-a). Manual cleanup stays opt-in: rm -rf
+    /home/sync/zbackup/<label>/mirror/old-dir (converges <=24h via the daily
+    reconcile). The source's .git rides along (unpushed commits are the crown
+    jewels). Health (T13-b P1-4 regime fix): the rotating 8-sample cursor AND
+    the daily-reconcile due-clock live in STATE (rewritten every cycle) — a
+    busy map no longer starves the reconcile, an idle map no longer stalls
+    the rotation; the documented <=24h damage bound holds in every band.
+    Map-ahead-of-mirror is the one forbidden state (P0-1)."""
     mirror = "%s/%s/mirror" % (BACKUP_ROOT, label)
     os.makedirs(mirror, exist_ok=True)
-    args = ["rsync", "-a", "--no-perms", "--no-owner", "--no-group"]
-    for e in excl:
-        if e == ".git":                         # mirror WANTS .git (see docstring)
-            continue
-        args.append("--exclude=" + e)
-    args += [src + "/", mirror + "/"]
-    rc, out, err = run(args, timeout=600)
-    if rc in (0, 23):                           # 23: file vanished mid-copy (live tree)
-        return True, {"files": src_sig[0], "bytes": src_sig[1],
-                      "partial": rc == 23}
-    return False, "rsync rc=%s %s" % (rc, mask(err.strip()[:200]))
+    now = time.time()
+    old = load_map(label)
+    m = old
+    rebuilt = False
+    if m is not None and now >= st.get("_ck_due", 0):
+        m = None                    # daily full reconcile is DUE (P1-4)
+    if m is not None:
+        keys = [k for k in m if not k.startswith("__")]
+        i = st.get("__si", 0)       # rotating cursor in STATE (P1-5: SIZE
+        damage = False               # ONLY — mtime legitimately diverges)
+        for k in keys[i:i + 8]:
+            try:
+                if os.lstat(mirror + "/" + k).st_size != m[k][1]:
+                    damage = True
+                    break
+            except OSError:
+                damage = True
+                break
+        if damage:
+            m = None
+        else:
+            st["__si"] = (i + 8) % max(len(keys), 1)
+    if m is None:
+        m = build_map_from_mirror(mirror, old)
+        rebuilt = True
+        st["_ck_due"] = now + 86400
+        # rebuild maps carry mirror-side mtimes — ossfs ignores utimensat
+        # (mirror holds full-ns copy-time stamps; the tar-restored source is
+        # second-truncated), so an unaligned map would force a FULL re-copy
+        # pass on every rebuild. Align size-matching entries to source-side
+        # values (the same size-only identity class the sampling uses).
+        for k, v in files.items():
+            if k in m and m[k][1] == v[1]:
+                m[k] = [v[0], v[1]]
+    changed = [k for k, v in files.items()
+               if k not in m or m[k][0] != v[0] or m[k][1] != v[1]]
+    mapped, partial, errs = _copy_batches(src, mirror, changed, files)
+    for k in mapped:
+        m[k] = [files[k][0], files[k][1]]
+    m["__ck"] = now
+    if changed or rebuilt:                              # P2-9: no-op cycles
+        save_map(label, m)                              # write NOTHING to fuse
+    if errs:
+        return False, "; ".join(errs)[:200]
+    return True, {"files": sig[0], "bytes": sig[1], "partial": partial,
+                  "copied": len(mapped)}
 
 
 # --------------------------------------------------------------- leg B -------
@@ -550,37 +740,52 @@ def cycle(state, cfg, run_id):
             alerts.append("source vanished, mirror kept: %s" % label)
             continue
         st.pop("orphaned_since", None)
-        # change-gate (local signature; ossfs cost only when something moved)
-        sig = walk_signature(src, excl)
-        same = (sig == st.get("sig")) and (time.time() - st.get("last_full", 0) < 1800)
-        if same:
-            st["consec"] = 0
-            continue
-        errs = []
-        if not sync_is_fuse():
-            errs.append("/home/sync is not fuse (unmounted?) — leg A SKIPPED")
-        else:
-            ok, info = leg_a(src, label, excl, sig)
-            st["mirror"] = info if ok else {"error": info}
-            st["mirror_at"] = utc()
+        # per-source isolation (T13-b P2): one source's exception must not
+        # abort the remaining sources of this cycle.
+        try:
+            # change-gate (local walk; ossfs cost only when something moved)
+            sig, files, specials = walk_tree(src)
+            if specials:
+                log("walk label=%s skipped_specials=%d (fifo/socket/device — never mirrored)"
+                    % (label, specials))
+            # normalize: STATE round-trips tuples to lists — tuple != list made the
+            # first cycle of every fresh process run unconditionally (T13-L find;
+            # this also removes the boot-cycle full-pass after a no-change seam).
+            same = (list(st.get("sig") or ()) == list(sig)) and \
+                   (time.time() - st.get("last_full", 0) < 1800)
+            if same:
+                st["consec"] = 0
+                continue
+            errs = []
+            if not sync_is_fuse():
+                errs.append("/home/sync is not fuse (unmounted?) — leg A SKIPPED")
+            else:
+                ok, info = leg_a(src, label, files, sig, st)
+                st["mirror"] = info if ok else {"error": info}
+                st["mirror_at"] = utc()
+                if not ok:
+                    errs.append("mirror: %s" % info)
+            ok, info = leg_b(src, label, excl, run_id, pats, st)
+            st["sideband"] = info
+            st["sideband_at"] = utc()
             if not ok:
-                errs.append("mirror: %s" % info)
-        ok, info = leg_b(src, label, excl, run_id, pats, st)
-        st["sideband"] = info
-        st["sideband_at"] = utc()
-        if not ok:
-            errs.append("sideband: %s" % info)
-        st["sig"] = sig
-        st["last_full"] = time.time()
-        st["consec"] = 0 if not errs else st.get("consec", 0) + 1
-        st["last_errors"] = errs or None
-        if errs:
-            alerts += ["%s: %s" % (label, e) for e in errs]
-            log("cycle errors label=%s: %s" % (label, "; ".join(errs)))
-        else:
-            log("cycle ok label=%s mirror=%s sideband=%s" %
-                (label, st.get("mirror"), {k: v for k, v in st.get("sideband", {}).items()
-                                           if k in ("changed", "commit", "push_gh", "push_gl")}))
+                errs.append("sideband: %s" % info)
+            st["sig"] = sig
+            st["last_full"] = time.time()
+            st["consec"] = 0 if not errs else st.get("consec", 0) + 1
+            st["last_errors"] = errs or None
+            if errs:
+                alerts += ["%s: %s" % (label, e) for e in errs]
+                log("cycle errors label=%s: %s" % (label, "; ".join(errs)))
+            else:
+                log("cycle ok label=%s mirror=%s sideband=%s" %
+                    (label, st.get("mirror"), {k: v for k, v in st.get("sideband", {}).items()
+                                               if k in ("changed", "commit", "push_gh", "push_gl")}))
+        except Exception as e:
+            st["consec"] = st.get("consec", 0) + 1
+            st["last_errors"] = ["exception: %r" % e]
+            alerts.append("%s: exception %r" % (label, e))
+            log("source exception label=%s: %r" % (label, e))
     state["last_cycle"] = utc()
     state["run_id"] = run_id
     state["version"] = VERSION
@@ -736,9 +941,8 @@ def status():
             if "error" in m:
                 print("    mirror : ERROR %s" % m["error"][:100])
             else:
-                print("    mirror : %s files, %.1f MB%s" %
-                      (m.get("files", "?"), m.get("bytes", 0) / 1e6,
-                       " (seed)" if m.get("seed") else ""))
+                print("    mirror : %s files, %.1f MB" %
+                      (m.get("files", "?"), m.get("bytes", 0) / 1e6))
         print("    remote snap: %s -> backup-repo commit %s (gh: %s, gl: %s)"
               "  [backup repo only — your repo is never touched]"
               % (sbd.get("changed"), sbd.get("commit", "-"),

@@ -2,8 +2,8 @@
 name: z-container-kit
 metadata:
   author: z + Super Z forensic session
-  version: "6.1.0"
-  verified: "2026-10-07 (v6.1.0: cross-recycle daemon seam validated live — cold start 0.4s, both remotes green first cycle, old+new sideband branches coexist; zenv autostart sticky boot hooks with self-migrating dev.sh; kernel flock singleton; cross-chat restore fallback; Write/Edit/Read display-redaction matrix — disk always intact. v6.0.0: consumer/research split + zbackupd daemon, battery T1-T10, laws E18-E21)"
+  version: "6.2.0"
+  verified: "2026-10-09 (v6.2.0: delta-copy leg A — map-driven changed-set cp, rsync removed after a >300s timeout at 2.5k files; acceptance battery caught the sig tuple/list gate bug; PAT-free stored URLs + self-bootstrapping askpass. v6.1.0: cross-recycle daemon seam validated live — cold start 0.4s, both remotes green first cycle, old+new sideband branches coexist; zenv autostart sticky boot hooks with self-migrating dev.sh; kernel flock singleton; cross-chat restore fallback; Write/Edit/Read display-redaction matrix — disk always intact. v6.0.0: consumer/research split + zbackupd daemon, battery T1-T10, laws E18-E21)"
   description: >
     Consumer router: the ONE command (zenv start — background backup daemon
     mirroring all work trees to /home/sync + private backup repos every 60s),

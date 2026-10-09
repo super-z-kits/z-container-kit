@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zenv — the ONE consumer entrypoint of the z-container-kit (v6).
+# zenv — the ONE consumer entrypoint of the z-container-kit (v6.2).
 #
 #   zenv            start the background backup daemon (idempotent) + status
 #   zenv start      same as above
