@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zenv — the ONE consumer entrypoint of the z-container-kit (v6.2).
+# zenv — the ONE consumer entrypoint of the z-container-kit (v6.3).
 #
 #   zenv            start the background backup daemon (idempotent) + status
 #   zenv start      same as above
@@ -220,6 +220,9 @@ if [ -f /home/z/my-project/package.json ]; then
   bash "$SELF" autostart >/dev/null 2>&1 || true
   exit 0
 fi
+# R12-a: zenv on PATH for every fresh agent (idempotent, re-made each boot)
+mkdir -p /home/z/.npm-global/bin 2>/dev/null
+ln -sf "$SELF" /home/z/.npm-global/bin/zenv 2>/dev/null || true
 bash "$SELF" start >/dev/null 2>&1 || true
 exit 0
 EOF

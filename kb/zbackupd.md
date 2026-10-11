@@ -141,6 +141,65 @@ class predicted for large repos, reproduced at only 2.5k files.
   consistent view); the map shrinks ONLY via rebuild-from-mirror, which
   reflects actual mirror content (EIO-dir entries stay kept).
 
+## Round-12 — survival hardening (v6.3.0, zbackupd 1.2.x)
+
+Every change below is live-proven or battery-proven (58/58, including two
+regression tests written by the adversarial auditor).
+
+- **Boot-race defer (1.2.0, epoch-keyed 1.2.1)**: the platform's tar-restore
+  runs ~2-3 min after boot; a cycle that walks the tree mid-extract sees a
+  PARTIAL file set. Live 2026-10-11: cycle 1 (boot+8s) aligned the map
+  against a half-restored tree; the un-extracted tail re-copied next cycle
+  (1119 files, ~80s) — and on a fresh mirror the first sideband commit would
+  be a partial-tree snapshot. Fix: while `uptime < 300s` AND `max_mtime` is
+  <20s old AND `_boot_defers < 3`, defer the source (no sig write — the next
+  cycle re-evaluates). The budget is keyed to the BOOT EPOCH (`_bd_boot` in
+  STATE) because STATE survives recycles — an unkeyed counter disarms the
+  feature after the first boot (auditor P1-1, caught on the replica).
+- **Worker re-supervision (1.2.0, reparent-check 1.2.1)**: the supervisor
+  held the only flock; a SIGKILL'd supervisor left a live-but-lock-free
+  worker, and the next `zenv start` would create a SECOND worker (dual
+  writer). Fix: a worker spawned by a supervisor checks at every loop top;
+  if its supervisor is gone (`getppid() != _sup_pid` OR the cached pid's
+  cmdline no longer says --daemon — the reparent check defeats pid reuse),
+  it Popen's a fresh `--daemon` (which takes the free lock) and exits clean.
+  Live-proven: kill -9 supervisor -> "re-spawning supervision" -> new chain
+  within one interval, ZERO missed cycles.
+- **Stop semantics (1.2.1, auditor P1-2)**: `zenv stop` used to only signal
+  the supervisor — after a supervisor SIGKILL it printed "stopped cleanly"
+  while the orphaned worker resurrected a full chain ~1 interval later.
+  Now stop() writes `~/.zenv/stop.flag`, signals supervisor AND worker
+  (cmdline-verified, grace, then force); the worker's re-spawn path honors
+  the flag (no resurrection); `daemon()` clears the flag on the next start.
+- **Orphan telemetry (1.2.0)**: discovery only lists EXISTING dirs, so a
+  vanished outside-my-project repo froze silently in STATE (live: testrepo/
+  zck-mirror/zck-v2 sat stale with no flag). The post-cycle pass stamps
+  `orphaned_since` + `mirror_kept` + an ALERT for known-but-undiscovered
+  sources; `zenv status` now points straight at `zenv restore`. Resurrecting
+  the dir clears the flag (discovery takes over again).
+- **status() error-string guards (1.2.1)**: `st["mirror"]`/`st["sideband"]`
+  hold error STRINGS when their leg failed; status() only guarded mirror —
+  a failed sideband crashed `zenv status` (found by the battery's F test).
+- **Durable health.log (1.2.0, usability R12-a)**: one line per cycle
+  appended to `/home/sync/zbackup/health.log` (ts, run, per-label cp=/push=),
+  1MB-capped — wall-clock watches (like the Oct-10 daily-reconcile check
+  that died with the container) are now verifiable post-hoc.
+- **Versioned log lines (1.2.1, usability R12-a)**: `supervisor start
+  v<ver> pid=` / `foreground start v<ver> pid=` — the running version is
+  self-evident in daemon.log (a fresh agent found "every doc says 1.1.2,
+  the live daemon is 1.2.0" mid-deploy).
+- **zenv on PATH (v6.3, usability R12-a)**: the boot hook now symlinks
+  zenv into `/home/z/.npm-global/bin` (on PATH; the dir is image-baked so
+  the hook re-makes the link every boot).
+- **Outside-my-project coverage — live-proven end-to-end (the round's main
+  question)**: a git repo created at `/home/z/r12-outside` was auto-
+  discovered within one cycle (zero commands, zero config), delta-copied
+  to /home/sync (including .git — unpushed commits survive), sideband-
+  committed, and pushed to the private backup repo (sha-verified on the
+  remote). The platform backs up NOTHING there — the daemon is the only
+  protection, and it worked untouched. After a container death the repo
+  shows ORPHANED with its mirror kept; `zenv restore` brings it back.
+
 ## Operational notes
 
 - Hygiene (P1-7, hardened T13-b P1-2/P1-3): research-repo stored URLs are

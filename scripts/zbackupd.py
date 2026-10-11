@@ -47,7 +47,7 @@ import time
 import urllib.error
 import urllib.request
 
-VERSION = "1.1.2"
+VERSION = "1.2.2"
 ZENV = "/home/z/.zenv"
 SYNC = "/home/sync"
 BACKUP_ROOT = SYNC + "/zbackup"
@@ -711,6 +711,14 @@ def run_id_of():
     return "%s-%d" % (chat, boot)
 
 
+def _proc_uptime():
+    """Seconds since container boot (R12 boot-race defer gate)."""
+    try:
+        return float(open("/proc/uptime").read().split()[0])
+    except Exception:
+        return 1e9
+
+
 _STOP = {"flag": False}
 _CURPROC = {"p": None}
 
@@ -728,9 +736,11 @@ def _sigterm(_s, _f):
 def cycle(state, cfg, run_id):
     pats = load_pats()
     alerts = []
+    discovered = set()
     for src, label in discover_sources():
         if _STOP["flag"]:
             break
+        discovered.add(label)
         st = state["sources"].setdefault(label, {"src": src})
         st["src"] = src
         excl = excludes_for(src)
@@ -756,6 +766,28 @@ def cycle(state, cfg, run_id):
             if same:
                 st["consec"] = 0
                 continue
+            # R12 boot-race defer: at container boot the platform's tar
+            # restore runs ~2-3 min; a cycle that walks the tree mid-extract
+            # sees a partial file set (live 2026-10-11: the un-extracted tail
+            # missed the rebuild alignment and re-copied 1119 files next
+            # cycle; a fresh-mirror boot would even commit a partial-tree
+            # snapshot). Defer while the tree is still mutating AND we are
+            # inside the boot window; sig stays untouched so the next cycle
+            # re-evaluates; capped so it can never wedge protection.
+            # R12-b P1-1: the budget is per-BOOT — STATE survives recycles,
+            # so an unkeyed counter would disarm the feature after the very
+            # boot it was built for.
+            boot = int(time.time() - _proc_uptime())
+            if st.get("_bd_boot") != boot:
+                st["_bd_boot"] = boot
+                st["_boot_defers"] = 0
+            if (_proc_uptime() < 300 and time.time() - sig[2] < 20
+                    and st.get("_boot_defers", 0) < 3):
+                st["_boot_defers"] = st.get("_boot_defers", 0) + 1
+                log("boot-race defer label=%s max_mtime_age=%.0fs defers=%d "
+                    "(platform restore still in flight)" %
+                    (label, time.time() - sig[2], st["_boot_defers"]))
+                continue
             errs = []
             if not sync_is_fuse():
                 errs.append("/home/sync is not fuse (unmounted?) — leg A SKIPPED")
@@ -766,10 +798,10 @@ def cycle(state, cfg, run_id):
                 if not ok:
                     errs.append("mirror: %s" % info)
             ok, info = leg_b(src, label, excl, run_id, pats, st)
-            st["sideband"] = info
-            st["sideband_at"] = utc()
-            if not ok:
-                errs.append("sideband: %s" % info)
+            st["sideband"] = info if ok else {"error": info}   # R12-b P2-1:
+            st["sideband_at"] = utc()                          # error strings
+            if not ok:                                         # never flow into
+                errs.append("sideband: %s" % info)             # STATE raw
             st["sig"] = sig
             st["last_full"] = time.time()
             st["consec"] = 0 if not errs else st.get("consec", 0) + 1
@@ -786,6 +818,19 @@ def cycle(state, cfg, run_id):
             st["last_errors"] = ["exception: %r" % e]
             alerts.append("%s: exception %r" % (label, e))
             log("source exception label=%s: %r" % (label, e))
+    # R12 orphan telemetry: discovery only lists sources that EXIST, so a
+    # vanished outside-my-project repo used to freeze silently in STATE with
+    # no ORPHANED flag (live: testrepo/zck-mirror/zck-v2 sat stale since
+    # Oct 5-7). Stamp the truth — mirror kept on /home/sync — so `zenv
+    # status` points the next agent straight at `zenv restore`.
+    for label, st2 in list(state["sources"].items()):
+        if label in discovered:
+            continue
+        src2 = st2.get("src") or ""
+        if src2 and not os.path.isdir(src2) and not st2.get("orphaned_since"):
+            st2["orphaned_since"] = utc()
+            st2["mirror_kept"] = True
+            alerts.append("source vanished, mirror kept: %s (zenv restore)" % label)
     state["last_cycle"] = utc()
     state["run_id"] = run_id
     state["version"] = VERSION
@@ -795,12 +840,42 @@ def cycle(state, cfg, run_id):
                       "run: zenv pat <gh-token> [gl-token]")
     write_state(state)
     set_alerts(alerts)
+    # R12-a: one durable health line per cycle (survives recycles — the
+    # Oct-10 daily-reconcile watch evidence died with the container; wall-
+    # clock watches must be verifiable post-hoc from /home/sync).
+    try:
+        h = BACKUP_ROOT + "/health.log"
+        line = "%s run=%s" % (utc(), run_id)
+        for label, s2 in sorted(state["sources"].items()):
+            m2 = s2.get("mirror")
+            b2 = s2.get("sideband")
+            line += " | %s: %s %s" % (
+                label,
+                ("cp=%s" % m2.get("copied")) if isinstance(m2, dict) else "mirror=ERR",
+                ("push=%s" % b2.get("push_gh")) if isinstance(b2, dict) else "sbd=ERR")
+        with open(h, "a") as f:
+            f.write(mask(line) + "\n")
+        if os.path.getsize(h) > (1 << 20):      # 1MB cap, keep the tail half
+            with open(h) as f:
+                lines = f.read().splitlines(True)
+            with open(h, "w") as f:
+                f.writelines(lines[len(lines) // 2:])
+    except OSError:
+        pass
     return alerts
 
 
 def foreground(interval):
     signal.signal(signal.SIGTERM, _sigterm)
     os.makedirs(ZENV, exist_ok=True)
+    # R12: were we spawned by a supervisor? (manual --foreground runs have a
+    # shell/agent parent — never auto-respawn for those). If OUR supervisor
+    # dies, re-spawn supervision instead of orphaning with a free lock: a
+    # free lock lets the next `zenv start` (or boot hook) create a SECOND
+    # worker — a dual-writer race on STATE/map/sideband (live-confirmed
+    # 2026-10-11).
+    _sup_pid = os.getppid()
+    _supervised = pid_cmdline_has(_sup_pid, "--daemon")
     with open(DAEMON_PID, "w") as f:
         f.write(str(os.getpid()))
     state = read_state()
@@ -809,9 +884,45 @@ def foreground(interval):
     state["daemon_pid"] = os.getpid()
     state["started"] = utc()
     state["interval"] = cfg["interval"]
-    log("foreground start pid=%d run_id=%s interval=%ss" %
-        (os.getpid(), run_id, cfg["interval"]))
+    log("foreground start v%s pid=%d run_id=%s interval=%ss" %
+        (VERSION, os.getpid(), run_id, cfg["interval"]))
     while not _STOP["flag"]:
+        if _supervised and (os.getppid() != _sup_pid
+                            or not pid_cmdline_has(_sup_pid, "--daemon")):
+            # R12-b P2-4: getppid()!=_sup_pid catches reparenting (the
+            # supervisor is DEAD even if its pid was reused by another
+            # --daemon process — the cached-pid cmdline check alone would
+            # falsely pass and leave the worker lock-free forever).
+            if os.path.exists(ZENV + "/stop.flag"):
+                log("supervisor pid %d gone but stop-flag present — exiting "
+                    "without re-spawn" % _sup_pid)
+                break
+            log("supervisor pid %d vanished — re-spawning supervision, exiting"
+                % _sup_pid)
+            try:
+                subprocess.Popen([sys.executable, os.path.abspath(__file__),
+                                  "--daemon"], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+            except OSError as e:
+                log("re-supervision failed %r (keep cycling unsupervised)" % e)
+            else:
+                # bounded handoff (R12-b P2-2): confirm the new supervisor
+                # took over before exiting — fire-and-forget left a ~1s
+                # zero-chain window and a supervisor dying pre-spawn meant
+                # silent total death.
+                for _ in range(20):
+                    time.sleep(0.5)
+                    try:
+                        nsup = int(open(SUP_PID).read())
+                        if nsup != _sup_pid and os.path.exists("/proc/%d" % nsup):
+                            break
+                    except (OSError, ValueError):
+                        pass
+                else:
+                    log("handoff wait timed out — exiting anyway "
+                        "(supervisor may have crash-looped)")
+                break          # clean exit: the new chain takes over
         try:
             cycle(state, cfg, run_id)
         except Exception as e:                  # never die on one bad cycle
@@ -829,7 +940,10 @@ def foreground(interval):
             time.sleep(1.0)
     log("foreground clean stop")
     try:
-        os.remove(DAEMON_PID)
+        # R12-b P3: only remove OUR pidfile — a respawned worker may have
+        # already written its own (the exiting orphan used to delete it).
+        if open(DAEMON_PID).read().strip() == str(os.getpid()):
+            os.remove(DAEMON_PID)
     except OSError:
         pass
     return 0
@@ -865,7 +979,11 @@ def daemon():
         os._exit(0)
     with open(SUP_PID, "w") as f:
         f.write(str(os.getpid()))
-    log("supervisor start pid=%d" % os.getpid())
+    try:
+        os.remove(ZENV + "/stop.flag")   # R12-b P1-2: a deliberate stop must
+    except OSError:                       # never outlive the next start
+        pass
+    log("supervisor start v%s pid=%d" % (VERSION, os.getpid()))
     while not _STOP["flag"]:
         p = subprocess.Popen([sys.executable, os.path.abspath(__file__), "--foreground"])
         rc = None
@@ -913,6 +1031,15 @@ def pid_alive(path, needle):
     return None
 
 
+def pid_cmdline_has(pid, needle):
+    """True iff /proc/pid/cmdline (NUL-joined) contains needle."""
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            return needle.encode() in f.read().replace(b"\x00", b" ")
+    except OSError:
+        return False
+
+
 def status():
     sup = pid_alive(SUP_PID, "zbackupd")
     fg = pid_alive(DAEMON_PID, "zbackupd")
@@ -935,7 +1062,15 @@ def status():
         print("sources: none backed up yet (first cycle pending)")
     for label, s in sorted(srcs.items()):
         m = s.get("mirror", {})
-        sbd = s.get("sideband", {}) or {}
+        sbd = s.get("sideband", {})
+        # R12-b: error payloads are normalized to {"error": ...} at the
+        # producer (cycle(), 1.2.2). These guards remain defense-in-depth
+        # for legacy STATE files — a 1.1.x sideband error STRING crashed
+        # `zenv status` (found by the battery's F test, not by review).
+        if not isinstance(m, dict):
+            m = {}
+        if not isinstance(sbd, dict):
+            sbd = {}
         print("- %-16s last-cycle %s" % (label, s.get("sideband_at", "?")))
         if isinstance(m, dict):
             if "error" in m:
@@ -955,27 +1090,58 @@ def status():
 
 
 def stop():
-    """zenv stop calls this: SIGTERM supervisor (verified), grace, then force."""
-    pid = pid_alive(SUP_PID, "zbackupd")
-    if not pid:
-        print("zbackupd: not running")
-        return 0
+    """zenv stop: SIGTERM supervisor (verified), grace, force — AND the
+    worker (R12-b P1-2: after a supervisor SIGKILL the orphaned worker used
+    to resurrect a full chain ~1 interval after 'stopped cleanly'). The
+    stop-flag keeps the worker's re-supervision path from resurrecting the
+    chain mid-stop; daemon() clears the flag on the next start."""
     try:
-        os.kill(pid, signal.SIGTERM)
+        os.makedirs(ZENV, exist_ok=True)
+        with open(ZENV + "/stop.flag", "w") as f:
+            f.write(utc() + "\n")
     except OSError:
         pass
-    for _ in range(20):
-        if pid_alive(SUP_PID, "zbackupd") is None:
-            print("zbackupd: stopped cleanly")
-            return 0
-        time.sleep(0.5)
+    stopped = []
     pid = pid_alive(SUP_PID, "zbackupd")
     if pid:
         try:
-            os.kill(pid, signal.SIGKILL)        # last resort (cmdline verified)
+            os.kill(pid, signal.SIGTERM)
         except OSError:
             pass
-        print("zbackupd: force-killed supervisor %d" % pid)
+        for _ in range(20):
+            if pid_alive(SUP_PID, "zbackupd") is None:
+                stopped.append("supervisor %d" % pid)
+                break
+            time.sleep(0.5)
+        pid = pid_alive(SUP_PID, "zbackupd")
+        if pid:
+            try:
+                os.kill(pid, signal.SIGKILL)    # last resort (cmdline verified)
+            except OSError:
+                pass
+            stopped.append("supervisor %d (force)" % pid)
+    wpid = pid_alive(DAEMON_PID, "zbackupd")
+    if wpid:
+        try:
+            os.kill(wpid, signal.SIGTERM)
+        except OSError:
+            pass
+        for _ in range(20):
+            if pid_alive(DAEMON_PID, "zbackupd") is None:
+                stopped.append("worker %d" % wpid)
+                break
+            time.sleep(0.5)
+        wpid = pid_alive(DAEMON_PID, "zbackupd")
+        if wpid:
+            try:
+                os.kill(wpid, signal.SIGKILL)
+            except OSError:
+                pass
+            stopped.append("worker %d (force)" % wpid)
+    if stopped:
+        print("zbackupd: stopped (%s)" % ", ".join(stopped))
+    else:
+        print("zbackupd: not running")
     return 0
 
 

@@ -149,6 +149,18 @@ default set on what is really a multi-repo account).
   (mode-law attribution fix), SKILL.md mechanism/persistence sections.
   (known-stale: zsession's on-main message still names `git switch main` —
   scripts frozen that release; on-main the prelude is report-only; fixed in v6.0.0).
+- Version 6.3.0 — survival hardening (round-12). Live-proven: worker
+  crash -> supervisor respawn 30s; supervisor SIGKILL -> worker re-spawns
+  supervision within one interval (zero missed cycles); `zenv stop` now
+  stops orphaned workers too (stop-flag, no chain resurrection). Boot-race
+  defer: the platform's ~2.5-min tar-restore no longer causes a 1119-file
+  re-copy + partial-tree commits on the first cycles (per-boot budget).
+  Orphan telemetry: vanished outside-my-project repos now show ORPHANED
+  (mirror kept, zenv restore) instead of silently going stale. Durable
+  health.log on /home/sync (one line per cycle — wall-clock watches
+  survive recycles). zenv symlinked onto PATH at every boot. Outside-
+  my-project coverage live-proven end-to-end (auto-discovery -> mirror
+  -> sideband -> github push, zero commands). Battery 58/58.
 - Version 6.2.0 — leg-A delta-copy redesign (round-11). Measured live: a
   full-tree rsync to /home/sync timed out >300 s at only 2.5k files / 22.5 MB
   (dd streams the same mount at 116 MB/s; cp ~20 ms/file — rsync's per-file
