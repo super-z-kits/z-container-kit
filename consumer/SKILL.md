@@ -1,4 +1,4 @@
-# z-container-kit — consumer SKILL (v6.3)
+# z-container-kit — consumer SKILL (v6.4)
 
 One command makes your work un-losable. That is 90% of this kit.
 
@@ -8,7 +8,7 @@ One command makes your work un-losable. That is 90% of this kit.
 bash /home/user_skills/z-container-kit/consumer/zenv start
 ```
 
-- Every 60s the background daemon mirrors ALL your work trees — including
+- About every 60s the background daemon mirrors ALL your work trees — including
   uncommitted and unpushed work — to `/home/sync/zbackup` (survives even
   force-kill recycles) and pushes snapshot branches to your private github +
   gitlab backup repos. It copies only changed files, so large trees never

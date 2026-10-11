@@ -47,7 +47,7 @@ import time
 import urllib.error
 import urllib.request
 
-VERSION = "1.2.2"
+VERSION = "1.3.1"
 ZENV = "/home/z/.zenv"
 SYNC = "/home/sync"
 BACKUP_ROOT = SYNC + "/zbackup"
@@ -453,24 +453,33 @@ def _copy_batches(src, mirror, changed, files):
         if rc == 0:
             mapped.extend(batch)
             continue
-        ok, vanished = [], []
-        for f in batch:
-            sp, mp = os.path.join(src, f), mirror + "/" + f
-            try:
-                if not os.path.lexists(sp):
-                    vanished.append(f)
-                    continue
-                if os.lstat(mp).st_size == os.lstat(sp).st_size:
-                    ok.append(f)
-            except OSError:
-                pass
-        mapped.extend(ok)
+        # R13 phantom-copy fix (P0-1 restored): a failed batch must NEVER be
+        # blessed via size-match against possibly-stale mirror files — live
+        # twice (2026-10-11: the 1119-file and 2000-file "copies" wrote
+        # nothing; the mirror kept original stamps while the map moved
+        # ahead of it, and a same-size content edit in that window would
+        # have been silently unsynced forever). Now: vanished sources are
+        # benign (rsync-23 class); everything else stays OUT of the map and
+        # retries next cycle. One bounded retry without the vanished files
+        # covers the one-file-deleted poisons-the-batch case without a
+        # full re-copy.
+        vanished = [f for f in batch if not os.path.lexists(os.path.join(src, f))]
+        live = [] if len(vanished) == len(batch) else \
+            [f for f in batch if f not in set(vanished)]
         if vanished:
             partial = True
-        nfail = len(batch) - len(ok) - len(vanished)
-        if nfail > 0:
+        if live and vanished:
+            rc2, _, err2 = run(["cp", "--parents", "-p", "-f", "-P", "--"]
+                               + live + [mirror + "/"],
+                               timeout=CP_TIMEOUT, cwd=src)
+            if rc2 == 0:
+                mapped.extend(live)
+            else:
+                errs.append("copy(retry): %d/%d failed rc=%s %s"
+                            % (len(live), len(batch), rc2, mask(err2.strip()[:120])))
+        elif live:
             errs.append("copy: %d/%d failed rc=%s %s"
-                        % (nfail, len(batch), rc, mask(err.strip()[:120])))
+                        % (len(live), len(batch), rc, mask(err.strip()[:120])))
     return mapped, partial, errs
 
 
@@ -492,6 +501,16 @@ def leg_a(src, label, files, sig, st):
     rebuilt = False
     if m is not None and now >= st.get("_ck_due", 0):
         m = None                    # daily full reconcile is DUE (P1-4)
+    if m is not None and st.get("_map_ck", 0) > m.get("__ck", 0):
+        # R13 map-stick canary: STATE remembers the last SUCCESSFUL map
+        # save's __ck; a loaded map older than that means a fuse flush
+        # LOST a save (invisible until now — the map would silently roll
+        # back and re-copy). Not fatal: this cycle re-copies the changed
+        # set. But it must be visible in the log.
+        log("map save didn't persist (fuse flush loss?) label=%s "
+            "state_ck=%.0f loaded_ck=%.0f" % (label, st["_map_ck"],
+                                               m.get("__ck", 0)))
+        m = None                    # treat as stale -> rebuild
     if m is not None:
         keys = [k for k in m if not k.startswith("__")]
         i = st.get("__si", 0)       # rotating cursor in STATE (P1-5: SIZE
@@ -517,17 +536,36 @@ def leg_a(src, label, files, sig, st):
         # second-truncated), so an unaligned map would force a FULL re-copy
         # pass on every rebuild. Align size-matching entries to source-side
         # values (the same size-only identity class the sampling uses).
+        # R13-b P2: align only when the source stamp is NOT newer than what
+        # the mirror provably holds — a same-size rewrite landing between
+        # the last successful copy and ANY rebuild cycle (daily reconcile,
+        # sampler damage, canary trip) would otherwise be blessed as synced
+        # forever (audit-proven: reconcile cycles swallowed a same-size
+        # edit; mirror kept old content while the map claimed source
+        # stamps). The second-granularity classifier keeps the tar-restore
+        # alignment purpose intact: a preserved-stamp mirror entry and its
+        # ns-zeroed restored source share the same second, so they classify
+        # as unchanged even when this condition refuses the align.
         for k, v in files.items():
-            if k in m and m[k][1] == v[1]:
+            if k in m and m[k][1] == v[1] and m[k][0] <= v[0]:
                 m[k] = [v[0], v[1]]
+    # R13: the platform tar-restore ZEROES the ns half of every mtime
+    # (live-proven 2026-10-11: a first cycle re-copied 2252 files = 57% of
+    # the tree — 1103 fresh git objects + ~1100 never-re-touched entries —
+    # ALL same-second+same-size, i.e. pure-ns). Classify at SECOND
+    # granularity; the content still rides leg B (git hashes it) and the
+    # sampler checks size, so the only loss vs ns-exact is a same-second
+    # same-size in-place rewrite — vanishingly rare and git-covered.
     changed = [k for k, v in files.items()
-               if k not in m or m[k][0] != v[0] or m[k][1] != v[1]]
+               if k not in m or m[k][0] // 10 ** 9 != v[0] // 10 ** 9
+               or m[k][1] != v[1]]
     mapped, partial, errs = _copy_batches(src, mirror, changed, files)
     for k in mapped:
         m[k] = [files[k][0], files[k][1]]
     m["__ck"] = now
     if changed or rebuilt:                              # P2-9: no-op cycles
         save_map(label, m)                              # write NOTHING to fuse
+        st["_map_ck"] = now                             # R13 canary bookkeeping
     if errs:
         return False, "; ".join(errs)[:200]
     return True, {"files": sig[0], "bytes": sig[1], "partial": partial,
@@ -737,7 +775,9 @@ def cycle(state, cfg, run_id):
     pats = load_pats()
     alerts = []
     discovered = set()
-    for src, label in discover_sources():
+    ran, deferred = set(), set()          # R13: health-line truth — a
+    excepted = set()                      # skipped source must not echo
+    for src, label in discover_sources():  # the last full cycle's numbers
         if _STOP["flag"]:
             break
         discovered.add(label)
@@ -771,23 +811,38 @@ def cycle(state, cfg, run_id):
             # sees a partial file set (live 2026-10-11: the un-extracted tail
             # missed the rebuild alignment and re-copied 1119 files next
             # cycle; a fresh-mirror boot would even commit a partial-tree
-            # snapshot). Defer while the tree is still mutating AND we are
+            # snapshot). Defer while the tree is still filling AND we are
             # inside the boot window; sig stays untouched so the next cycle
             # re-evaluates; capped so it can never wedge protection.
             # R12-b P1-1: the budget is per-BOOT — STATE survives recycles,
             # so an unkeyed counter would disarm the feature after the very
             # boot it was built for.
+            # R13: the trigger is the walked-count being BELOW the last-boot
+            # sig — on this platform build the restore is PRE-daemon (start.sh
+            # is sequential: rm tree -> tar xf (~1-2s at uptime ~6s, proven by
+            # /tmp/boot-timeline.log + a ctime census) -> skills -> dev.sh),
+            # so a below-count tree means a failed/short pre-stop tar or a
+            # boot-window mass deletion: do NOT snapshot that as the newest
+            # branch for a few minutes. Session GROWTH never defers (the
+            # R13.0 growth clause delayed real work 3-5 min; audit P2).
+            # R12-b P1-1: the budget is per-BOOT (epoch-keyed).
             boot = int(time.time() - _proc_uptime())
             if st.get("_bd_boot") != boot:
                 st["_bd_boot"] = boot
                 st["_boot_defers"] = 0
-            if (_proc_uptime() < 300 and time.time() - sig[2] < 20
-                    and st.get("_boot_defers", 0) < 3):
+                st.pop("_bd_n", None)     # legacy R13.0 key, no longer used
+            last_n = (list(st.get("sig") or [None]) + [None])[0]
+            if (_proc_uptime() < 300 and last_n is not None
+                    and sig[0] < last_n
+                    and st.get("_boot_defers", 0) < 5):
                 st["_boot_defers"] = st.get("_boot_defers", 0) + 1
-                log("boot-race defer label=%s max_mtime_age=%.0fs defers=%d "
-                    "(platform restore still in flight)" %
-                    (label, time.time() - sig[2], st["_boot_defers"]))
+                deferred.add(label)
+                log("boot-window defer label=%s walked=%d last-boot=%s "
+                    "defers=%d (tree below last-boot count — failed restore "
+                    "or mass deletion?)" % (label, sig[0], last_n,
+                                            st["_boot_defers"]))
                 continue
+            ran.add(label)
             errs = []
             if not sync_is_fuse():
                 errs.append("/home/sync is not fuse (unmounted?) — leg A SKIPPED")
@@ -802,8 +857,14 @@ def cycle(state, cfg, run_id):
             st["sideband_at"] = utc()                          # error strings
             if not ok:                                         # never flow into
                 errs.append("sideband: %s" % info)             # STATE raw
-            st["sig"] = sig
-            st["last_full"] = time.time()
+            if not errs:                      # R13-b P1: a cycle with errors
+                st["sig"] = sig               # must NOT advance the gate —
+                st["last_full"] = time.time() # the failed files (and failed
+            else:                             # pushes) retry on the NEXT
+                pass                          # cycle, not at the 30-min
+                                             # heartbeat (audit-proven: an
+                                             # error cycle gate-skipped and
+                                             # left the mirror stale <=30min)
             st["consec"] = 0 if not errs else st.get("consec", 0) + 1
             st["last_errors"] = errs or None
             if errs:
@@ -818,6 +879,8 @@ def cycle(state, cfg, run_id):
             st["last_errors"] = ["exception: %r" % e]
             alerts.append("%s: exception %r" % (label, e))
             log("source exception label=%s: %r" % (label, e))
+            ran.discard(label)               # R13-b P2: an exceptioned
+            excepted.add(label)              # source must not echo the
     # R12 orphan telemetry: discovery only lists sources that EXIST, so a
     # vanished outside-my-project repo used to freeze silently in STATE with
     # no ORPHANED flag (live: testrepo/zck-mirror/zck-v2 sat stale since
@@ -849,10 +912,31 @@ def cycle(state, cfg, run_id):
         for label, s2 in sorted(state["sources"].items()):
             m2 = s2.get("mirror")
             b2 = s2.get("sideband")
-            line += " | %s: %s %s" % (
-                label,
-                ("cp=%s" % m2.get("copied")) if isinstance(m2, dict) else "mirror=ERR",
-                ("push=%s" % b2.get("push_gh")) if isinstance(b2, dict) else "sbd=ERR")
+            # R13: per-cycle TRUTH — a gate-skipped source used to echo the
+            # last full cycle's cp/push (a 30-min run of "cp=16" lines that
+            # were all skips nearly read as a mount incident). skip = gate,
+            # defer = boot-race defer, ORPHAN = source gone, mirror kept.
+            if label in excepted:
+                val = "EXC"                 # cycle exceptioned; values below
+            elif label in ran:              # are the previous cycle's
+                if isinstance(m2, dict) and "copied" in m2:
+                    cpv = "cp=%s" % m2["copied"]
+                else:
+                    cpv = "mirror=ERR"
+                if isinstance(b2, dict) and "push_gh" in b2:
+                    puv = "push=%s" % b2["push_gh"]
+                elif isinstance(b2, dict) and b2.get("changed") is False:
+                    puv = "push=none"       # nothing to push — not an error
+                else:
+                    puv = "sbd=ERR"
+                val = "%s %s" % (cpv, puv)
+            elif label in deferred:
+                val = "cp=defer"
+            elif s2.get("orphaned_since"):
+                val = "ORPHAN"
+            else:
+                val = "skip"
+            line += " | %s: %s" % (label, val)
         with open(h, "a") as f:
             f.write(mask(line) + "\n")
         if os.path.getsize(h) > (1 << 20):      # 1MB cap, keep the tail half
@@ -1085,7 +1169,8 @@ def status():
         if s.get("last_errors"):
             print("    errors  : %s" % "; ".join(s["last_errors"])[:140])
         if s.get("orphaned_since"):
-            print("    ORPHANED since %s (mirror kept on /home/sync)" % s["orphaned_since"])
+            print("    ORPHANED since %s (mirror kept on /home/sync — "
+                  "zenv restore %s)" % (s["orphaned_since"], label))
     print("state: %s | mirror root: %s" % (STATE_PATH, BACKUP_ROOT))
 
 

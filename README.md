@@ -149,18 +149,39 @@ default set on what is really a multi-repo account).
   (mode-law attribution fix), SKILL.md mechanism/persistence sections.
   (known-stale: zsession's on-main message still names `git switch main` —
   scripts frozen that release; on-main the prelude is report-only; fixed in v6.0.0).
+- Version 6.4.0 — boot-tax elimination + copy integrity (round-13).
+  Live-proven on a real fresh boot: the old ns-exact map compare re-copied
+  2252 files (57% of the tree) after every restore because the platform
+  tar-restore zeroes the nanosecond half of mtimes — the compare is now
+  second-granularity (boot copies: thousands -> ~0). Phantom-copy fix:
+  a failed cp batch used to be blessed via size-match (reported copied,
+  wrote nothing, map ahead of mirror) — now errors retry next cycle.
+  Audit P1: error cycles no longer advance the change-gate (failed files
+  used to wait for the 30-min heartbeat). Health.log truth regime:
+  ran / skip / defer / ORPHAN / EXC per source per cycle (gate-skips used
+  to echo stale numbers and read like re-copy loops). Map-stick canary
+  surfaces lost fuse saves. Platform laws corrected by forensics: the
+  restore is PRE-daemon (~1-2s at uptime ~6s, start.sh sequential — the
+  old "2-3 min extraction race" was a misattribution), and cp -p DOES
+  preserve mtimes onto the mirror (async ~3s settle — the old no-op law
+  was an immediate-stat artifact). Boot defer narrowed to the
+  below-last-boot-count guard (session growth never defers). Restore
+  path live-proven end-to-end (zck-mirror: git-fsck-clean, full history,
+  remotes intact). package.json consumer field trial passed (mini-services
+  hook, node_modules pruned, auto-discovery + remote push, zero commands).
+  Battery 75/75.
 - Version 6.3.0 — survival hardening (round-12). Live-proven: worker
   crash -> supervisor respawn 30s; supervisor SIGKILL -> worker re-spawns
   supervision within one interval (zero missed cycles); `zenv stop` now
-  stops orphaned workers too (stop-flag, no chain resurrection). Boot-race
-  defer: the platform's ~2.5-min tar-restore no longer causes a 1119-file
-  re-copy + partial-tree commits on the first cycles (per-boot budget).
-  Orphan telemetry: vanished outside-my-project repos now show ORPHANED
-  (mirror kept, zenv restore) instead of silently going stale. Durable
-  health.log on /home/sync (one line per cycle — wall-clock watches
-  survive recycles). zenv symlinked onto PATH at every boot. Outside-
-  my-project coverage live-proven end-to-end (auto-discovery -> mirror
-  -> sideband -> github push, zero commands). Battery 58/58.
+  stops orphaned workers too (stop-flag, no chain resurrection). Boot
+  defer (attribution corrected in v6.4.0 — the 1119-file recopy was the
+  skills-injection class, not an extraction race): per-boot budget, no
+  partial-tree commits. Orphan telemetry: vanished outside-my-project
+  repos now show ORPHANED (mirror kept, zenv restore) instead of silently
+  going stale. Durable health.log on /home/sync (one line per cycle —
+  wall-clock watches survive recycles). zenv symlinked onto PATH at every
+  boot. Outside-my-project coverage live-proven end-to-end (auto-discovery
+  -> mirror -> sideband -> github push, zero commands). Battery 58/58.
 - Version 6.2.0 — leg-A delta-copy redesign (round-11). Measured live: a
   full-tree rsync to /home/sync timed out >300 s at only 2.5k files / 22.5 MB
   (dd streams the same mount at 116 MB/s; cp ~20 ms/file — rsync's per-file

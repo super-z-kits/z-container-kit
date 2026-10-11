@@ -1,6 +1,7 @@
 # zbackupd — the continuous background backup daemon (v6)
 
-Status: [V] built + live-validated 2026-10-05 (battery T1–T10, below). Design
+Status: [V] built + live-validated 2026-10-05 (battery T1–T10, below;
+expanded T13–T14, now 75/75 — see the round-12/13 sections). Design
 doc + adversarial gate reports (T10-a/b, both SHIP-AFTER-FIXES, all P0/P1
 folded): research repo `scratch/design/zenv-design.md` + `scratch/reports/`.
 
@@ -146,16 +147,22 @@ class predicted for large repos, reproduced at only 2.5k files.
 Every change below is live-proven or battery-proven (58/58, including two
 regression tests written by the adversarial auditor).
 
-- **Boot-race defer (1.2.0, epoch-keyed 1.2.1)**: the platform's tar-restore
-  runs ~2-3 min after boot; a cycle that walks the tree mid-extract sees a
-  PARTIAL file set. Live 2026-10-11: cycle 1 (boot+8s) aligned the map
-  against a half-restored tree; the un-extracted tail re-copied next cycle
-  (1119 files, ~80s) — and on a fresh mirror the first sideband commit would
-  be a partial-tree snapshot. Fix: while `uptime < 300s` AND `max_mtime` is
-  <20s old AND `_boot_defers < 3`, defer the source (no sig write — the next
-  cycle re-evaluates). The budget is keyed to the BOOT EPOCH (`_bd_boot` in
-  STATE) because STATE survives recycles — an unkeyed counter disarms the
-  feature after the first boot (auditor P1-1, caught on the replica).
+- **Boot-window defer (1.2.0, epoch-keyed 1.2.1, narrowed 1.3.1)**: ORIGIN
+  (mis-attributed, corrected in round-13): the first post-boot cycle
+  re-copied 1119 files. Round-13 forensics re-attributed that to the
+  skills-injection class (v1.1.2 pre-prune; 1098/1119 under `skills/`), NOT
+  a mid-extract walk — the platform's restore is PRE-daemon (start.sh is
+  sequential: rm tree -> `tar xf` ~1-2s at uptime ~6s -> skills -> dev.sh,
+  proven by /tmp/boot-timeline.log + a one-second ctime census). Current
+  semantics (1.3.1): while `uptime < 300s` AND the walked-count is BELOW
+  the last-full-cycle sig's count AND `_boot_defers < 5`, defer the source
+  (no sig write). Below-count at boot now means a failed/short pre-stop
+  tar or a boot-window mass deletion — do not snapshot that as the newest
+  branch for a few minutes. Session GROWTH never defers (the R13.0 growth
+  clause delayed real agent work 3-5 min; audit P2, removed same round).
+  The budget is keyed to the BOOT EPOCH (`_bd_boot` in STATE) because STATE
+  survives recycles — an unkeyed counter disarms the feature after the
+  first boot (auditor P1-1, caught on the replica).
 - **Worker re-supervision (1.2.0, reparent-check 1.2.1)**: the supervisor
   held the only flock; a SIGKILL'd supervisor left a live-but-lock-free
   worker, and the next `zenv start` would create a SECOND worker (dual
@@ -180,10 +187,15 @@ regression tests written by the adversarial auditor).
 - **status() error-string guards (1.2.1)**: `st["mirror"]`/`st["sideband"]`
   hold error STRINGS when their leg failed; status() only guarded mirror —
   a failed sideband crashed `zenv status` (found by the battery's F test).
-- **Durable health.log (1.2.0, usability R12-a)**: one line per cycle
-  appended to `/home/sync/zbackup/health.log` (ts, run, per-label cp=/push=),
-  1MB-capped — wall-clock watches (like the Oct-10 daily-reconcile check
-  that died with the container) are now verifiable post-hoc.
+- **Durable health.log (1.2.0, truth-regime 1.3.x)**: one line per cycle
+  appended to `/home/sync/zbackup/health.log`, 1MB-capped. Vocabulary per
+  source per cycle (the pre-1.3 format echoed the last full cycle's numbers
+  on gate-skips — a 30-min run of "cp=16" lines that were all skips nearly
+  read as a mount incident): `cp=N push=…` = ran this cycle; `skip` =
+  gate-skipped (unchanged tree); `cp=defer` = boot-window defer; `ORPHAN` =
+  source dir gone, mirror kept; `EXC` = the source's cycle raised; `push=none`
+  = ran, nothing to push. Wall-clock watches (like the Oct-10 daily-reconcile
+  check that died with the container) are verifiable post-hoc.
 - **Versioned log lines (1.2.1, usability R12-a)**: `supervisor start
   v<ver> pid=` / `foreground start v<ver> pid=` — the running version is
   self-evident in daemon.log (a fresh agent found "every doc says 1.1.2,
@@ -198,7 +210,60 @@ regression tests written by the adversarial auditor).
   committed, and pushed to the private backup repo (sha-verified on the
   remote). The platform backs up NOTHING there — the daemon is the only
   protection, and it worked untouched. After a container death the repo
-  shows ORPHANED with its mirror kept; `zenv restore` brings it back.
+  shows ORPHANED with its mirror kept; `zenv restore` brings it back
+  (live-proven round-13: restored zck-mirror was git-fsck-clean with full
+  history and remotes intact).
+
+## Round-13 — boot-tax elimination + copy-integrity (v6.4.0, zbackupd 1.3.x)
+
+Every change below is live-proven or battery-proven (75/75; the adversarial
+auditor's P1/P2s are folded with their own regression tests).
+
+- **Second-granularity map compare (1.3.0)** — the platform tar-restore
+  ZEROES the ns half of every mtime; an ns-exact map compare re-copied
+  2252 files (57% of the tree) on the first post-restore cycle (anatomy:
+  1103 fresh git objects + ~1100 never-re-touched entries, all
+  same-second+same-size — pure-ns class). The classifier now compares
+  `mtime_ns // 1e9` (seconds) + size. Content safety is unchanged: leg B
+  hashes content (git), the sampler checks size, and the only residual is
+  a same-second same-size in-place rewrite (vanishingly rare, git-covered).
+- **Phantom-copy fix (1.3.0, P0-1 restored)** — on cp failure the OLD
+  fallback blessed size-matching mirror files as "ok" without writing
+  (live-twice: a 1119-file and a 2000-file "copy" wrote NOTHING; the
+  mirror kept original stamps while the map moved ahead — the one
+  forbidden state). Now: vanished sources are benign (partial), everything
+  else errors and retries next cycle; a batch poisoned by one vanished
+  file gets ONE bounded retry without the vanished files.
+- **Error cycles never advance the gate (1.3.1, audit P1)** — a cycle with
+  errors used to stamp sig/last_full anyway, so the NEXT cycle gate-skipped
+  and the failed files waited for the 30-min heartbeat (audit-proven:
+  mirror stale <=30 min after a transient cp failure; the round-12 battery
+  masked it with force()). Now sig/last_full advance only on a clean cycle
+  — failed files AND failed pushes retry within 60s.
+- **Rebuild alignment time-condition (1.3.1, audit P2)** — the rebuild-time
+  size-match alignment blessed a same-size rewrite landing between the last
+  copy and any rebuild (daily reconcile / sampler damage / canary trip) as
+  synced FOREVER. Now it aligns only when the source stamp is not newer
+  than the mirror's (`m[k][0] <= v[0]`); the preserved-stamp mirror class
+  still classifies as unchanged via the second-granularity compare.
+- **Map-stick canary (1.3.0)** — STATE remembers the last successful map
+  save's `__ck` (`_map_ck`); a loaded map older than that means a fuse
+  flush LOST a save — logged + treated as stale (rebuild). Invisible
+  silent rollbacks are now surfaced.
+- **Health-log truth regime (1.3.0/1.3.1)** — see the health.log bullet
+  above (ran/skip/defer/ORPHAN/EXC + push=none).
+- **utimensat law REFINED (round-13 forensics)** — cp -p DOES preserve
+  mtimes onto the ossfs mirror, but ASYNC: an immediate stat shows
+  write-time, the preserved stamp lands ~3s later (the old "utimensat is a
+  no-op" law was an immediate-stat artifact). Mirror entries therefore
+  hold preserved source stamps post-settle; the pre-settle write-time
+  class self-heals via one recopy.
+- **Platform timing law CORRECTED** — the restore is a single ~1-2s event
+  at uptime ~6s, BEFORE the boot hook starts the daemon (start.sh is
+  sequential: rm -> tar xf -> skills -> dev.sh; evidence: /tmp/boot-timeline.log
+  + a one-second ctime census of all restored files). The old "~2-3 min
+  extraction racing the daemon" model was wrong; see the boot-window defer
+  bullet above for what the defer is FOR now.
 
 ## Operational notes
 
