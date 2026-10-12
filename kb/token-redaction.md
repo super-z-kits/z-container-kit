@@ -59,24 +59,36 @@ EOF
 set -a; . /home/sync/SECRETS.env; set +a
 ```
 
-`zenv pat <gh> [gl]` stamps the same two channels:
-`/home/sync/SECRETS.env` (per-chat) + `/home/user_skills/zk-secrets.env`
-(per-user).
+`zenv pat <gh> [gl]` stamps every channel (R14 law): the SESSION file
+`/home/user_skills/zk-secrets-<chat8>.env` (THE external rotation target —
+chat-id separated on the account-shared PolarFS disk, so concurrent
+sessions never clobber each other), the canonical
+`/home/user_skills/zk-secrets.env` (account carrier for future sessions),
+and `/home/sync/SECRETS.env` (per-chat). The daemon resolves them in that
+order, re-reads every cycle — an external rotation lands on the NEXT cycle,
+no restart — and never overwrites an existing session file except via
+`zenv pat` itself. `zenv status` prints the winning channel, the token's
+last-4 fingerprint and age, and the exact path to rotate externally; a
+rejected token raises a sticky alert naming that path until a push
+succeeds (drill live-proven round-14).
 
 ## PAT persistence channels (ranked)
 
-Across RECYCLE (same chat): **1.** `/home/sync/SECRETS.env` +
-`/home/user_skills/zk-secrets.env` (remote-backed, force-kill-proof, no
-git dependency) **> 2.** repo.tar riders (PAT-in-origin-URL in
-`.git/config` + committed files; graceful-only freshness; rotation is
-the weak link) **> 3.** `/home/z` dotfiles — DEAD (overlay; nothing
-archives them).
+Across RECYCLE (same chat): **1.** the session file
+`/home/user_skills/zk-secrets-<chat8>.env` + canonical
+`/home/user_skills/zk-secrets.env` (PolarFS, force-kill-proof, externally
+rotatable) **> 2.** `/home/sync/SECRETS.env` (per-chat redundancy;
+container-locked, unreachable for external rotation) **> 3.** repo.tar
+riders (PAT-in-origin-URL in `.git/config` + committed files;
+graceful-only freshness; rotation is the weak link) **> 4.** `/home/z`
+dotfiles — DEAD (overlay; nothing archives them).
 
 Across a NEW sandbox: **1.** `/home/user_skills` (per-USER PolarFS —
-zk-secrets.env / zk-default.env re-wire a fresh sandbox) **> 2.**
-GitHub repo content (universal once a PAT is wired in) — while
-URL-embedding does NOT carry (fresh bootstrap repo: no repo.tar, no
-remote) and per-chat `/home/sync` does NOT carry.
+zk-secrets-*.env / zk-default.env re-wire a fresh sandbox; a new chat
+ADOPTS its own session file from the canonical on its first cycle that
+knows the chatId) **> 2.** GitHub repo content (universal once a PAT is
+wired in) — while URL-embedding does NOT carry (fresh bootstrap repo: no
+repo.tar, no remote) and per-chat `/home/sync` does NOT carry.
 
 ## The observer-log leak lesson
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zenv — the ONE consumer entrypoint of the z-container-kit (v6.4).
+# zenv — the ONE consumer entrypoint of the z-container-kit (v6.5).
 #
 #   zenv            start the background backup daemon (idempotent) + status
 #   zenv start      same as above
@@ -84,14 +84,20 @@ case "$cmd" in
     gh="${1:-}"; gl="${2:-}"
     if [ -z "$gh" ]; then
       echo "usage: zenv pat <github-pat> [gitlab-pat]" >&2
-      echo "  stamps tokens into /home/sync/SECRETS.env (per-chat recycle survival)"
-      echo "  and /home/user_skills/zk-secrets.env (per-user, crosses chats)."
+      echo "  stamps tokens into EVERY persistence channel (R14 order): the"
+      echo "  session file /home/user_skills/zk-secrets-<chat8>.env (THE external"
+      echo "  rotation target — shared disk, session-separated), then zk-secrets.env"
+      echo "  (account carrier for future sessions), then SECRETS.env (container)."
       echo "  NOTE: expect [REDACTED:github_token] in the DISPLAY — that is the tool"
       echo "  lying, not the write failing (verify: sha256sum the file)."
       exit 1
     fi
     umask 177
-    for f in "$SYNC/SECRETS.env" "/home/user_skills/zk-secrets.env"; do
+    CHAT8=$($PY -c "import json;print(str(json.load(open('/etc/.z-ai-config')).get('chatId','')).replace('chat-','')[:8])" 2>/dev/null || true)
+    FILES=()
+    [ -n "$CHAT8" ] && FILES+=("/home/user_skills/zk-secrets-$CHAT8.env")
+    FILES+=("/home/user_skills/zk-secrets.env" "$SYNC/SECRETS.env")
+    for f in "${FILES[@]}"; do
       { [ -n "$gh" ] && printf 'GITHUB_PAT=%s\n' "$gh"
         [ -n "$gl" ] && printf 'GITLAB_PAT=%s\n' "$gl"
       } > "$f" 2>/dev/null && echo "stamped: $f ($(wc -c < "$f") bytes)" | mask || echo "FAILED: $f" >&2
@@ -107,9 +113,15 @@ case "$cmd" in
     # bootstrap askpass helpers from PAT channels (same 0700 format the daemon
     # uses; PAT never appears in a URL or cmdline). Idempotent; prints hosts.
     HOSTS=$($PY - <<'PYEOF'
-import os, re
+import json, os, re
+try:
+    c8 = str(json.load(open("/etc/.z-ai-config")).get("chatId", "")).replace("chat-", "")[:8]
+except Exception:
+    c8 = ""
 pats = {}
-for f in ["/home/user_skills/zk-secrets.env", "/home/sync/SECRETS.env"]:
+_fs = (["/home/user_skills/zk-secrets-%s.env" % c8] if c8 else []) + \
+      ["/home/user_skills/zk-secrets.env", "/home/sync/SECRETS.env"]
+for f in _fs:
     try: t = open(f).read()
     except OSError: continue
     for k, host in [("GITHUB_PAT","github"), ("GITLAB_PAT","gitlab")]:

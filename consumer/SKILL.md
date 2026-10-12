@@ -1,4 +1,4 @@
-# z-container-kit — consumer SKILL (v6.4)
+# z-container-kit — consumer SKILL (v6.5)
 
 One command makes your work un-losable. That is 90% of this kit.
 
@@ -20,8 +20,12 @@ bash /home/user_skills/z-container-kit/consumer/zenv start
   work back (mirror + remote branches). The mirror NEVER deletes — a file
   lost from your tree is still in it:
   `cp /home/sync/zbackup/<label>/mirror/<path> .`
-- Lost your PAT? `zenv pat <github-pat> [gitlab-pat]` re-stamps every channel
-  (per-chat + per-user); the daemon picks it up within one cycle.
+- PAT rotated or revoked? `zenv status` prints the exact file to edit —
+  `/home/user_skills/zk-secrets-<chat8>.env`. You can update it from OUTSIDE
+  the container too (it is on the account-shared disk): the daemon picks it
+  up within one cycle, no restart. In-chat: `zenv pat <github-pat>
+  [gitlab-pat]` stamps every channel. A rejected token raises a sticky
+  alert naming that exact path until a push succeeds again.
 - `zenv autostart` (once) = sticky: installs a boot hook inside your repo —
   commit it and every boot after your next recycle starts the daemon
   automatically, even in sessions that never read this file.

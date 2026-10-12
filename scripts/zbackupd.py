@@ -47,7 +47,7 @@ import time
 import urllib.error
 import urllib.request
 
-VERSION = "1.3.1"
+VERSION = "1.4.1"
 ZENV = "/home/z/.zenv"
 SYNC = "/home/sync"
 BACKUP_ROOT = SYNC + "/zbackup"
@@ -68,9 +68,23 @@ REPO_GL = "ansgareutychisO/zai-sandbox-backup"
 GL_PUSH_EVERY = 2          # gitlab push every Nth change-push (WAF cost, Q2)
 MAX_CONSEC_FAILS = 3       # ALERT threshold
 
+# ---- PAT channels (R14 law: the PolarFS copies SHADOW /home/sync — the
+# sync copy locks to the container and is unreachable for external
+# rotation). ONE order, shared verbatim by every reader (zbackupd,
+# push-research.sh, consumer/zenv): session > canonical > sync > legacy > env.
+CANON_PAT_FILE = "/home/user_skills/zk-secrets.env"     # account carrier (a
+                                                        # fresh session boot-
+                                                        # straps from it)
+SYNC_PAT_FILE = "/home/sync/SECRETS.env"                # container redundancy
+SESS_PAT_TMPL = "/home/user_skills/zk-secrets-%s.env"   # % chat8 — THE
+                                                        # external rotation
+                                                        # target (shared disk:
+                                                        # session-separated)
+LEGACY_KV = "/home/user_skills/zk-default.env"          # v5.1 zk-default
+CHATID_FILE = "/etc/.z-ai-config"                       # chatId lands AFTER
+                                                        # boot — never cache
+
 # excludes shared by BOTH legs (gitignore syntax for sideband; rsync gets translated)
-EX_FILES = ["/home/sync/SECRETS.env", "/home/user_skills/zk-secrets.env",
-            "/home/user_skills/zk-default.env"]
 EXCLUDES = [
     ".git",              # any depth: source's own + nested repos (mirror uses -a on
                          # the tree including .git ONLY at top level via explicit copy)
@@ -110,31 +124,148 @@ def log(msg):
 def parse_kv(path):
     d = {}
     try:
-        for ln in open(path):
+        # utf-8-sig: an externally-edited rotation saved with a BOM must not
+        # silently no-op the first key; non-UTF-8 garbage must not crash the
+        # cycle (R14-A: UnicodeDecodeError is NOT an OSError)
+        for ln in open(path, encoding="utf-8-sig"):
             ln = ln.strip()
             if ln and not ln.startswith("#") and "=" in ln:
                 k, v = ln.split("=", 1)
                 d[k.strip()] = v.strip().strip('"').strip("'")
-    except OSError:
+    except (OSError, UnicodeDecodeError, ValueError):
         pass
     return d
 
 
-def load_pats():
-    """PAT resolution order (re-read every cycle; zenv pat takes effect live)."""
+def chat8_of():
+    """First 8 chars of the platform chatId. The chatId lands in CHATID_FILE
+    AFTER container boot (this daemon's own boots read 'nochat' until the
+    first message) — re-derive per use, never cache across cycles."""
+    try:
+        d = json.load(open(CHATID_FILE))
+        return (str(d.get("chatId", "")).replace("chat-", "")[:8]) or None
+    except Exception:
+        return None
+
+
+def sess_pat_path():
+    """This session's PAT file — the EXTERNAL ROTATION TARGET (drop a new
+    token here from outside the container; picked up next cycle). None until
+    the chatId is known (early cycles resolve canon/sync instead)."""
+    c = chat8_of()
+    return SESS_PAT_TMPL % c if c else None
+
+
+def pat_files():
+    """PAT resolution order (R14 law — every reader shares it verbatim):
+      1. session zk-secrets-<chat8>.env — this chat's own copy on the
+         account-shared disk; externally updatable; concurrent sessions
+         never touch each other's file (shared-disk separation)
+      2. canonical zk-secrets.env — account-level carrier; a fresh session
+         bootstraps from it before its session file exists
+      3. sync SECRETS.env — container-local redundancy (fast path)
+      4. legacy zk-default URL embed, 5. GH_PAT/GL_PAT env (last resort)
+    Per key, first found wins; gh and gl resolve independently."""
+    files = []
+    p = sess_pat_path()
+    if p:
+        files.append(p)
+    files.append(CANON_PAT_FILE)
+    files.append(SYNC_PAT_FILE)
+    return files
+
+
+def _age_of(p):
+    try:
+        return max(0.0, time.time() - os.path.getmtime(p))
+    except OSError:
+        return None
+
+
+def resolve_pats():
+    """(gh, gl, prov) — prov maps each key to (file-basename, age-s) of the
+    channel that WON it (status/rotation verification). Re-read every cycle:
+    an external rotation takes effect on the next cycle, no restart."""
+    prov = {}
     gh = gl = None
-    for p in EX_FILES:
+    for p in pat_files():
         kv = parse_kv(p)
-        gh = gh or kv.get("GITHUB_PAT")
-        gl = gl or kv.get("GITLAB_PAT")
+        if gh is None and kv.get("GITHUB_PAT"):
+            gh = kv["GITHUB_PAT"]
+            prov["gh"] = (os.path.basename(p), _age_of(p))
+        if gl is None and kv.get("GITLAB_PAT"):
+            gl = kv["GITLAB_PAT"]
+            prov["gl"] = (os.path.basename(p), _age_of(p))
     if not gh:  # legacy channel: token embedded in zk-default remote URL
-        url = parse_kv("/home/user_skills/zk-default.env").get("ZK_DEFAULT_REMOTE", "")
+        url = parse_kv(LEGACY_KV).get("ZK_DEFAULT_REMOTE", "")
         m = re.search(r"(ghp_[A-Za-z0-9]+)", url)
         if m:
             gh = m.group(1)
+            prov["gh"] = ("zk-default.env", _age_of(LEGACY_KV))
     gh = gh or os.environ.get("GH_PAT")
     gl = gl or os.environ.get("GL_PAT")
+    if gh and "gh" not in prov:
+        prov["gh"] = ("env", 0)
+    if gl and "gl" not in prov:
+        prov["gl"] = ("env", 0)
+    return gh, gl, prov
+
+
+def load_pats():
+    """Back-compat 2-tuple (cycle + status use resolve_pats for provenance)."""
+    gh, gl, _ = resolve_pats()
     return gh, gl
+
+
+def _adopt_session_creds():
+    """R14: on the first cycle that knows the chatId, seed THIS session's PAT
+    file from the lower channels. Idempotent by construction — an existing
+    session file is NEVER overwritten (external edits are sacred; `zenv pat`
+    is the only in-container re-writer)."""
+    p = sess_pat_path()
+    if not p or os.path.exists(p):
+        return
+    gh, gl, _ = resolve_pats()
+    if not (gh or gl):
+        return
+    try:
+        # R14-A: tmp + os.replace — atomic. A failed/partial write must not
+        # leave a truncated session file behind (the exists-guard would then
+        # disable adoption forever while looking freshly rotated).
+        tmp = p + ".tmp"
+        with open(tmp, "w") as f:
+            if gh:
+                f.write("GITHUB_PAT=%s\n" % gh)
+            if gl:
+                f.write("GITLAB_PAT=%s\n" % gl)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, p)
+        log("creds: session file adopted %s (seeded from canon/sync — this is "
+            "the external rotation target from now on)" % os.path.basename(p))
+    except OSError as e:
+        try:
+            os.remove(p + ".tmp")
+        except OSError:
+            pass
+        log("creds: session adoption failed err=%r (retry next cycle)" % e)
+
+
+_AUTH_RE = re.compile(r"403|401|Authentication failed|Access denied|Unauthorized", re.I)
+
+
+def _push_auth_alerts(label, info):
+    """An auth-rejected push must name the rotation path — a revoked PAT
+    otherwise reads as generic push noise (R14)."""
+    out = []
+    if not isinstance(info, dict):
+        return out
+    for k, host in (("push_gh", "github"), ("push_gl", "gitlab")):
+        v = info.get(k) or ""
+        if isinstance(v, str) and v.startswith("FAIL") and _AUTH_RE.search(v):
+            out.append("%s: %s rejected the PAT (revoked or rotated?) — rotate: "
+                       "edit %s (or: zenv pat <gh> [gl])"
+                       % (label, host, sess_pat_path() or CANON_PAT_FILE))
+    return out
 
 
 def askpass_path(host, pat):
@@ -622,26 +753,45 @@ def leg_b(src, label, excl, run_id, pats, st):
     # .env is precious and usually gitignored — force-add root-level ones
     run([GIT, "--git-dir", sb, "add", "-f", "--", ".env", ".env.local",
          ".env.production"], timeout=60)
-    # change?
+    # change? (and: does the PREVIOUS push need a retry? — R14: a failed push
+    # on a quiet tree must not wait for the next content change; a token
+    # outage would otherwise leave snapshots local-only until something edits)
     rc, _, _ = run([GIT, "--git-dir", sb, "diff", "--quiet", "--cached"], timeout=60)
     head_rc, _, _ = run([GIT, "--git-dir", sb, "rev-parse", "--verify", "HEAD"],
                         timeout=10)
     has_head = head_rc == 0
-    if rc == 0 and has_head:
+    prev = st.get("sideband") if isinstance(st.get("sideband"), dict) else {}
+    prev_push_failed = (str(prev.get("push_gh", "")).startswith("FAIL") or
+                        str(prev.get("push_gl", "")).startswith("FAIL"))
+    quiet = rc == 0 and has_head
+    if rc == 0 and not has_head:
+        # R14-A (pre-existing gap): an empty repo (git init, no commits,
+        # nothing staged) used to error EVERY cycle at `git commit` ("nothing
+        # to commit") — noisy and wrong; there is honestly nothing to snapshot.
+        return True, {"changed": False, "commits": 0,
+                      "note": "empty repo — nothing to snapshot yet"}
+    if quiet and not prev_push_failed:
         return True, {"changed": False, "commits": st.get("commits", 0)}
-    rc, _, err = run([GIT, "--git-dir", sb, "commit", "-qm",
-                      "auto %s src=%s" % (utc(), label)], timeout=120)
-    if rc != 0:
-        return False, "commit rc=%s %s" % (rc, mask(err.strip()[:160]))
-    rc, sha, _ = run([GIT, "--git-dir", sb, "rev-parse", "--short", "HEAD"],
-                     timeout=10)
-    sha = sha.strip()
-    st["commits"] = st.get("commits", 0) + 1
     st.setdefault("_push_counter", 0)
     st["_push_counter"] += 1
     branch = "refs/heads/auto/%s/%s" % (label, run_id)
     st["branch"] = branch
-    out = {"changed": True, "commit": sha, "commits": st["commits"], "branch": branch}
+    if quiet:   # retry path: nothing new to commit — re-push the existing HEAD
+        rc, sha, _ = run([GIT, "--git-dir", sb, "rev-parse", "--short", "HEAD"],
+                         timeout=10)
+        sha = sha.strip()
+        out = {"changed": False, "commit": sha, "commits": st.get("commits", 0),
+               "branch": branch, "push_retry": True}
+    else:
+        rc, _, err = run([GIT, "--git-dir", sb, "commit", "-qm",
+                          "auto %s src=%s" % (utc(), label)], timeout=120)
+        if rc != 0:
+            return False, "commit rc=%s %s" % (rc, mask(err.strip()[:160]))
+        rc, sha, _ = run([GIT, "--git-dir", sb, "rev-parse", "--short", "HEAD"],
+                         timeout=10)
+        sha = sha.strip()
+        st["commits"] = st.get("commits", 0) + 1
+        out = {"changed": True, "commit": sha, "commits": st["commits"], "branch": branch}
 
     # --- pushes: github every change; gitlab every GL_PUSH_EVERY-th
     gh, gl = pats
@@ -662,7 +812,12 @@ def leg_b(src, label, excl, run_id, pats, st):
             out["push_gh"] = "SKIP askpass"
     else:
         out["push_gh"] = "SKIP no-pat"
-    if gl and st["_push_counter"] % GL_PUSH_EVERY == 0:
+    if gl and (st["_push_counter"] % GL_PUSH_EVERY == 0 or
+               (isinstance(prev, dict) and
+                str(prev.get("push_gl", "")).startswith("FAIL"))):
+        # R14-A P2: the cadence must never suppress a RETRY of a previously
+        # failed GL push — parity alone used to strand GL-only failures
+        # (first retry lands odd, records "skip cadence", chain ends).
         ap = askpass_path("gitlab", gl)
         if ap:
             okc, url = ensure_repo_private("gitlab", gl)
@@ -678,7 +833,11 @@ def leg_b(src, label, excl, run_id, pats, st):
                         break
                     time.sleep(1.5)
                 out["push_gl"] = ("ok" if rcs and rcs[-1] == 0 else
-                                  "FAIL(waf?) rc=%s" % rcs[-1])
+                                  # R14-A P2: carry the masked stderr — the
+                                  # bare "rc=N" form could never match the
+                                  # auth-alert regex, so a revoked GitLab PAT
+                                  # read as WAF noise forever.
+                                  "FAIL(waf?) %s" % mask(err.strip()[:140]))
             else:
                 out["push_gl"] = "SKIP %s" % url
         else:
@@ -736,7 +895,7 @@ def run_id_of():
     """<chat8>-<boot-epoch> — per-boot branch namespace (T10-b P0-2)."""
     chat = ""
     try:
-        d = json.load(open("/etc/.z-ai-config"))
+        d = json.load(open(CHATID_FILE))
         c = str(d.get("chatId", ""))
         chat = c.replace("chat-", "")[:8] or "nochat"
     except Exception:
@@ -772,8 +931,9 @@ def _sigterm(_s, _f):
 
 
 def cycle(state, cfg, run_id):
-    pats = load_pats()
-    alerts = []
+    _adopt_session_creds()   # R14: seed the session file BEFORE resolving —
+    pats = load_pats()       # never overwrites an existing (externally
+    alerts = []              # rotated) session file
     discovered = set()
     ran, deferred = set(), set()          # R13: health-line truth — a
     excepted = set()                      # skipped source must not echo
@@ -857,6 +1017,9 @@ def cycle(state, cfg, run_id):
             st["sideband_at"] = utc()                          # error strings
             if not ok:                                         # never flow into
                 errs.append("sideband: %s" % info)             # STATE raw
+            alerts += _push_auth_alerts(label, st["sideband"])  # R14: an
+            # auth-rejected push must name the rotation path, not read as
+            # generic push noise
             if not errs:                      # R13-b P1: a cycle with errors
                 st["sig"] = sig               # must NOT advance the gate —
                 st["last_full"] = time.time() # the failed files (and failed
@@ -897,6 +1060,13 @@ def cycle(state, cfg, run_id):
     state["last_cycle"] = utc()
     state["run_id"] = run_id
     state["version"] = VERSION
+    # R14-A P3: rotate-me alerts STICK — re-raise from the persisted
+    # per-source sideband so a gate-skip cycle (quiet tree) cannot clear
+    # ALERT.txt 60s after the failure; it clears only when a push succeeds.
+    for label3, st3 in state["sources"].items():
+        if isinstance(st3, dict):
+            alerts += _push_auth_alerts(label3, st3.get("sideband"))
+    alerts = list(dict.fromkeys(alerts))   # dedupe, order-preserving
     # PAT-channel health
     if not pats[0]:
         alerts.append("no GITHUB_PAT in any channel (leg B github disabled) — "
@@ -1132,10 +1302,25 @@ def status():
     print("supervisor: %s   foreground: %s" %
           ("pid %d ALIVE" % sup if sup else "not running",
            "pid %d ALIVE" % fg if fg else "not running"))
-    gh, gl = load_pats()
-    print("PAT channels: github %s | gitlab %s" %
-          ("present" if gh else "MISSING (zenv pat <gh> [gl])",
-           "present" if gl else "absent (optional)"))
+    gh, gl, prov = resolve_pats()
+
+    def _ps(k, tok, missing):
+        if not tok:
+            return missing
+        ch, age = prov.get(k) or ("?", None)
+        a = ("?" if age is None else
+             "%dd" % (age / 86400) if age >= 86400 else
+             "%dh" % (age / 3600) if age >= 3600 else "%dm" % (age / 60))
+        return "%s …%s@%s" % (ch, tok[-4:], a)
+
+    print("PAT: github %s | gitlab %s" %
+          (_ps("gh", gh, "MISSING (zenv pat <gh> [gl])"),
+           _ps("gl", gl, "absent (optional)")))
+    sp = sess_pat_path()
+    print("rotate externally: %s%s" %
+          (sp or CANON_PAT_FILE,
+           "" if sp else "  [chatId not yet known — session file appears after "
+                        "the first message]"))
     if os.path.exists(ALERT_PATH):
         print("!! ALERTS (see %s):" % ALERT_PATH)
         print("   " + "\n   ".join(open(ALERT_PATH).read().strip().splitlines()[1:6]))

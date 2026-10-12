@@ -149,6 +149,33 @@ default set on what is really a multi-repo account).
   (mode-law attribution fix), SKILL.md mechanism/persistence sections.
   (known-stale: zsession's on-main message still names `git switch main` —
   scripts frozen that release; on-main the prelude is report-only; fixed in v6.0.0).
+- Version 6.5.0 — credential-channel architecture (round-14).
+  The GH/GitLab PATs are now externally rotatable: the daemon resolves
+  session > canonical > sync > legacy-URL > env, where the SESSION file
+  `/home/user_skills/zk-secrets-<chat8>.env` (account-shared PolarFS, 0600,
+  chat-id separated; the platform chatId lands POST-boot and is re-derived
+  every cycle) is THE external rotation target and auto-adopts from the
+  lower channels on first sight (never overwrites an existing file —
+  external edits are sacred). This kills the priority inversion where the
+  container-locked `/home/sync/SECRETS.env` shadowed the account-durable
+  copy, so an external rotation used to have NO effect, plus the reader
+  drift across zbackupd / push-research.sh / consumer/zenv (now ONE order,
+  battery-pinned). Rotation is first-class: `zenv status` shows channel +
+  fingerprint (last-4) + age and prints the exact rotation path; an
+  auth-rejected push raises a STICKY rotate-me alert naming that path
+  (re-raised from persisted state across gate-skips until a push
+  succeeds); a failed push retries on quiet trees (was: waited for the
+  next content change — a token outage stranded snapshots local-only);
+  GitLab failures carry masked stderr (the bare rc=N form could never
+  match the auth regex) and the GL cadence never suppresses a retry.
+  LIVE-PROVEN E2E this round (the drill): sync-poison shadowed (push ok),
+  invalid session token -> FAIL + sticky alert -> external fix ->
+  automatic re-push of the stranded commit -> green, alert cleared.
+  parse_kv is BOM/Unicode-safe; empty repos snapshot with an honest note
+  instead of erroring every cycle. Battery 75 -> 93 asserts (W-block);
+  t_o's latent fake-uptime flake fixed (constant fake uptime made the
+  int() boot epoch drift across second boundaries, randomly resetting the
+  defer budget — R13's two green runs were timing luck).
 - Version 6.4.0 — boot-tax elimination + copy integrity (round-13).
   Live-proven on a real fresh boot: the old ns-exact map compare re-copied
   2252 files (57% of the tree) after every restore because the platform

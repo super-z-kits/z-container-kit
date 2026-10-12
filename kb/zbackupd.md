@@ -308,3 +308,102 @@ auditor's P1/P2s are folded with their own regression tests).
 - Daemon dies on recycle by design; everything it wrote persists. Next
   session: `zenv start` again (or mini-services autostart on package.json
   projects).
+
+## Round-14 — credential-channel architecture (v6.5.0, zbackupd 1.4.x)
+
+**Origin (user directive)**: the PAT must be updatable EXTERNALLY (no
+container access) — user_skills (account-shared PolarFS) over /home/sync
+(container-locked); user_skills writes must be SESSION-ID separated because
+concurrent sessions share that disk under one account.
+
+**The pre-R14 defects (audited before any code was written)**:
+1. Priority inversion — EX_FILES resolved /home/sync/SECRETS.env FIRST, so
+   the externally-editable zk-secrets.env was dead weight: an external
+   rotation had NO effect while the sync twin existed (they were
+   byte-identical md5 twins, sync always present once stamped).
+2. Reader drift — zbackupd [sync,canon] vs push-research.sh [sync,canon]
+   vs the consumer/zenv restore bootstrap [canon,sync].
+3. No session separation — `zenv pat` stamped two SHARED names on a disk
+   shared by every session under the account (concurrent sessions clobber
+   each other's rotations).
+4. No rotation visibility — status said "present"; nothing named which
+   channel won, its age, or where to drop a new token.
+5. Quiet-tree push strand — leg_b early-returned on unchanged trees, so a
+   FAILED push was never retried until the next content change (a token
+   outage left snapshots local-only; recovery depended on the next edit).
+
+**The channel law (v1.4.0, pinned by battery W6 across ALL readers)**:
+`session zk-secrets-<chat8>.env > canonical zk-secrets.env > sync
+SECRETS.env > legacy zk-default URL > GH_PAT/GL_PAT env`, per key (gh/gl
+resolve independently), re-read EVERY cycle — an external rotation lands
+on the next cycle, no restart. chat8 comes from /etc/.z-ai-config chatId,
+which the platform writes AFTER daemon boot (live this round: the daemon
+started 'nochat' at boot+1s; the id landed with the first message ~11 min
+later) — so it is re-derived per cycle and cached nowhere. Before the
+chatId lands (or in non-IM runs) there IS no session channel; the daemon
+resolves canon/sync, and an on-disk session file is inert in that window.
+
+**Adoption**: on the first cycle that knows the chatId, the session file is
+seeded from the lower channels (tmp + os.replace, 0600). It NEVER
+overwrites an existing session file — external edits are sacred; `zenv
+pat` (which stamps session+canon+sync) is the only in-container re-writer.
+Live: adopted on the first v1.4.0 cycle, 0600, exact key shape.
+
+**Rotation UX**: `zenv status` prints the winning channel, the token's
+last-4 fingerprint and age (`PAT: github zk-secrets-<chat8>.env …EsJV@17m
+| gitlab …`), and the exact external rotation path — enough to VERIFY a
+rotation without ever seeing the token.
+
+**Alerts that stick**: an auth-class push FAIL (401/403/Authentication
+failed/Access denied/Unauthorized in the masked stderr) raises an alert
+naming the rotation path; the alert is RE-RAISED from the persisted
+per-source sideband every cycle (gate-skip cycles included) until a push
+actually succeeds — it cannot blink out on a quiet tree. GitLab failure
+strings carry masked stderr since 1.4.1 (the old "FAIL(waf?) rc=N" form
+could never match the regex — a revoked GL PAT read as WAF noise forever),
+and the GL push cadence never suppresses a retry of a previously-failed
+GL push (parity used to strand GL-only failures: first retry lands odd,
+records "skip cadence", chain ends).
+
+**Quiet-tree push retry**: a previously-FAILED push (gh OR gl) re-pushes
+the existing HEAD even when nothing changed — sideband carries
+`push_retry: true`; healthy quiet trees still take the cheap early return.
+
+**The live drill (all phases, this round, private backup repo)**:
+- P2 poison sync's GITHUB_PAT -> next cycle push_gh ok (shadowed; under
+  1.3.1 the sync copy WAS the resolution winner and this would have
+  broken pushes).
+- P3 rotate the session file to an invalid token -> push_gh FAIL
+  "Invalid username or token" + sticky alert naming the session path;
+  GL leg unaffected (per-key independence).
+- P4 external fix + mtime-only touch -> the cycle ran with changed:false
+  and RETRIED the stranded commit: push ok, alert cleared.
+Full external rotation loop: detect -> alert with the exact path ->
+external edit -> automatic recovery. Zero container access, zero restarts,
+zero commands.
+
+**Smaller folds (1.4.1)**: parse_kv opens with utf-8-sig and catches
+UnicodeDecodeError (a BOM-ed or binary-garbage channel file used to crash
+the whole cycle AND `zenv status`; a BOM silently no-op'd the first key);
+empty repos (git init, nothing staged, no HEAD) snapshot with an honest
+note instead of erroring every cycle (pre-existing since 1.1); adoption is
+atomic (a partial write can no longer leave a truncated session file that
+disables adoption while looking freshly rotated).
+
+**Fresh-boot prediction for v1.4.x (grade at the next boot)**: cycle 1
+runs nochat (chatId absent at boot) and resolves canon/sync — copied
+should stay in the v1.3.1 band (roughly 15-60, no defers); once the first
+message lands, the session file (persisted on PolarFS across recycles of
+the SAME chat) wins and `zenv status` flips to showing it; adoption must
+NOT re-fire for this chat's existing file. run_id stays frozen per
+foreground start (a mid-session restart this round produced both
+nochat-<boot> and <chat8>-<boot> branch prefixes for one boot — harmless,
+fresh branches by design; same prefix reuse across restarts in one boot
+cannot conflict).
+
+**Platform laws learned this round**: /home/user_skills is PolarFS
+(fuse.pfs, account-shared, chmod-real — 0600 enforceable) while /home/sync
+is ossfs/tmpfs (container-scoped, modes faked 0777); the chatId lands in
+/etc/.z-ai-config POST-boot with the first message; the live zenv shim is
+a SYMLINK to the kit's consumer/zenv (kit deploys update the CLI
+instantly).
