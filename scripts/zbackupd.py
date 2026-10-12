@@ -47,7 +47,7 @@ import time
 import urllib.error
 import urllib.request
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 ZENV = "/home/z/.zenv"
 SYNC = "/home/sync"
 BACKUP_ROOT = SYNC + "/zbackup"
@@ -91,6 +91,14 @@ EXCLUDES = [
     "node_modules/", ".next/", ".turbo/",
     "/upload/", "/dev.log", "tool-results/",
     "observer*.log", "*.tar",
+    # R14 addendum — tracked-set diet: ~89MB of historical watchdog captures
+    # (round-6 era) sat in the tracked set (platform checkpoint commit),
+    # bloating repo.tar 10.7->90MB, every sideband snapshot and every fresh
+    # mirror seed. They are safe in remote history + PolarFS + the never-
+    # deleting mirror; also gitignored repo-side so the platform's turn-
+    # boundary add -A cannot re-add them. This also prevents a false boot-
+    # defer blip (walked-count drop) on the first boot after the diet.
+    "wdt6-full/", "scratch/wdt6/", "scratch/wdt/",
 ]
 EXCLUDES_MYPROJECT = EXCLUDES + ["skills/"]   # official skills re-extract at boot
 
